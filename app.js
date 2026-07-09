@@ -443,6 +443,29 @@ function startSpeechRecognition() {
       } else {
         interimBar.classList.add("hidden");
       }
+    },
+    (errorCode) => {
+      const explanations = {
+        network:
+          "⚠️ Speech recognition: network error — Chrome couldn't reach its speech service. Check your internet connection.",
+        "audio-capture":
+          "⚠️ Speech recognition: no usable microphone — is another app using it?",
+        "not-allowed":
+          "⚠️ Speech recognition: microphone permission denied. Re-enable it in the address bar and click 🗣️ to retry.",
+        "service-not-allowed":
+          "⚠️ Speech recognition: blocked by the browser. Are you on HTTPS or localhost?",
+        "restart-loop":
+          "⚠️ Speech recognition keeps failing and has been paused. Click 🗣️ twice to retry.",
+        "language-not-supported":
+          "⚠️ Speech recognition: this language isn't supported by your browser.",
+      };
+      addSystemMessage(
+        explanations[errorCode] || `⚠️ Speech recognition error: ${errorCode}`
+      );
+      if (errorCode === "restart-loop" || errorCode === "not-allowed") {
+        $("sttBtn").classList.add("off");
+        sttEnabled = false;
+      }
     }
   );
 }
