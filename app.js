@@ -356,6 +356,14 @@ $("micBtn").addEventListener("click", () => {
   if (!track) return;
   track.enabled = !track.enabled;
   $("micBtn").classList.toggle("off", !track.enabled);
+  // Speech recognition captures the mic independently of the WebRTC track,
+  // so pause/resume it alongside the mute state.
+  if (!track.enabled) {
+    SpeechService.stop();
+    interimBar.classList.add("hidden");
+  } else if (sttEnabled) {
+    startSpeechRecognition();
+  }
 });
 
 $("camBtn").addEventListener("click", () => {
@@ -368,7 +376,8 @@ $("camBtn").addEventListener("click", () => {
 $("sttBtn").addEventListener("click", () => {
   sttEnabled = !sttEnabled;
   $("sttBtn").classList.toggle("off", !sttEnabled);
-  if (sttEnabled) {
+  const micOn = localStream.getAudioTracks()[0]?.enabled;
+  if (sttEnabled && micOn) {
     startSpeechRecognition();
   } else {
     SpeechService.stop();
