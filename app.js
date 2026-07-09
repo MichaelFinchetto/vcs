@@ -12,9 +12,10 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.4.0"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.5.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
+const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
 
 // ---------- State ----------
 let peer = null;
@@ -24,6 +25,8 @@ let myLang = "en";
 let roomCode = "";
 let isHost = false;
 let sttEnabled = true;
+let rejoining = false;
+let rejoinAttempts = 0;
 
 /** peerId -> { conn, call, name, lang } */
 const peers = new Map();
@@ -76,21 +79,25 @@ $("versionBadge").textContent = `v${APP_VERSION}`;
 // Remember the DeepL relay URL between visits.
 $("relayInput").value = TranslateService.getRelayUrl();
 
-async function enterRoom(code) {
+async function enterRoom(code, reuseCode) {
   myName = $("nameInput").value.trim() || "Guest";
   TranslateService.setRelayUrl($("relayInput").value);
   isHost = code === null;
-  roomCode = isHost ? generateRoomCode() : code;
+  roomCode = isHost ? (reuseCode || generateRoomCode()) : code;
 
-  setLobbyBusy(true, "Requesting camera & microphone…");
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: { echoCancellation: true, noiseSuppression: true },
-    });
-  } catch (e) {
-    setLobbyBusy(false, "Camera/microphone access denied.");
-    return;
+  if (peer && !peer.destroyed) peer.destroy();
+
+  if (!localStream) {
+    setLobbyBusy(true, "Requesting camera & microphone…");
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+    } catch (e) {
+      setLobbyBusy(false, "Camera/microphone access denied.");
+      return;
+    }
   }
 
   setLobbyBusy(true, "Connecting to signaling network…");
@@ -111,9 +118,26 @@ async function enterRoom(code) {
   peer.on("call", handleIncomingCall);
 
   peer.on("error", (err) => {
+    const inApp = !app.classList.contains("hidden");
     if (err.type === "unavailable-id") {
+      // After a refresh the broker can take a moment to free our old host ID.
+      if (rejoining && rejoinAttempts < 5) {
+        rejoinAttempts++;
+        setLobbyBusy(true, `Rejoining room ${roomCode}… (${rejoinAttempts})`);
+        setTimeout(() => enterRoom(null, roomCode), 1500);
+        return;
+      }
       setLobbyBusy(false, "Room code collision — try creating again.");
     } else if (err.type === "peer-unavailable") {
+      // In-app this fires during host-reconnect attempts — the retry loop handles it.
+      if (inApp) return;
+      // Rejoining before the host is back — retry.
+      if (rejoining && rejoinAttempts < 5) {
+        rejoinAttempts++;
+        setLobbyBusy(true, `Rejoining room ${roomCode}… (${rejoinAttempts})`);
+        setTimeout(() => connectToPeer(ID_PREFIX + roomCode, true), 1500);
+        return;
+      }
       setLobbyBusy(false, "Room not found. Check the code.");
     } else {
       console.error("Peer error:", err);
@@ -217,6 +241,26 @@ function removePeer(id) {
   if (tile) tile.remove();
   updateGridCount();
   addSystemMessage(`${info.name} left`);
+
+  // If we lost the host (e.g. they refreshed), keep trying to reconnect —
+  // the host reclaims the same room ID when they come back.
+  if (!isHost && id === ID_PREFIX + roomCode) {
+    addSystemMessage("Host disconnected — waiting for them to return…");
+    scheduleHostReconnect(0);
+  }
+}
+
+function scheduleHostReconnect(attempt) {
+  if (attempt >= 20) {
+    addSystemMessage("Couldn't reach the host. Leave and rejoin when they're back.");
+    return;
+  }
+  setTimeout(() => {
+    if (!peer || peer.destroyed) return;
+    if (peers.has(ID_PREFIX + roomCode)) return; // reconnected
+    connectToPeer(ID_PREFIX + roomCode, false);
+    scheduleHostReconnect(attempt + 1);
+  }, 3000);
 }
 
 function broadcast(msg) {
@@ -336,6 +380,12 @@ function showApp() {
   lobby.classList.add("hidden");
   app.classList.remove("hidden");
   $("roomCode").textContent = roomCode;
+  sessionStorage.setItem(
+    SESSION_KEY,
+    JSON.stringify({ name: myName, lang: myLang, roomCode, isHost })
+  );
+  rejoining = false;
+  rejoinAttempts = 0;
   addVideoTile("self", localStream, true);
   startSpeechRecognition();
   addSystemMessage(
@@ -380,6 +430,7 @@ $("sttBtn").addEventListener("click", () => {
 });
 
 $("leaveBtn").addEventListener("click", () => {
+  sessionStorage.removeItem(SESSION_KEY); // deliberate exit — don't auto-rejoin
   broadcast({ type: "bye" });
   if (peer) peer.destroy();
   if (localStream) localStream.getTracks().forEach((t) => t.stop());
@@ -530,3 +581,24 @@ function scrollToBottom(container) {
 window.addEventListener("beforeunload", () => {
   if (peer) peer.destroy();
 });
+
+// Auto-rejoin after a refresh (session survives per-tab reloads only).
+(function tryRejoin() {
+  const raw = sessionStorage.getItem(SESSION_KEY);
+  if (!raw) return;
+  let s;
+  try {
+    s = JSON.parse(raw);
+  } catch {
+    sessionStorage.removeItem(SESSION_KEY);
+    return;
+  }
+  $("nameInput").value = s.name;
+  myLang = s.lang;
+  document
+    .querySelectorAll("#langToggle button")
+    .forEach((b) => b.classList.toggle("active", b.dataset.lang === s.lang));
+  rejoining = true;
+  lobbyStatus.textContent = `Rejoining room ${s.roomCode}…`;
+  enterRoom(s.isHost ? null : s.roomCode, s.roomCode);
+})();
