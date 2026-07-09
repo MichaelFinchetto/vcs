@@ -69,7 +69,11 @@ Each participant translates incoming messages locally, so each person can set th
 
 ## Fixing "stuck on Joining room" — TURN relay
 
-If a joiner hangs on "Joining room…" (common between countries, or when one side is on mobile/CGNAT), the direct P2P connection is being blocked by a strict NAT and you need a TURN relay to bridge it:
+If a joiner hangs on "Joining room…" (common between countries, or when one side is on mobile/CGNAT), the direct P2P connection is being blocked by a strict NAT and a TURN relay is needed to bridge it.
+
+**Built-in (no signup):** the app automatically tries public community TURN servers (Open Relay static, freestun.net). These often work but are best-effort — they can be down or congested.
+
+**Your own free relay (more reliable):**
 
 1. Sign up free at https://www.metered.ca/tools/openrelay/ (Open Relay — 20GB/month free, no card).
 2. In their dashboard you get a **TURN credentials URL** like
