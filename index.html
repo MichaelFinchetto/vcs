@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MASHAAAAA — P2P Translated Video Chat</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+
+  <!-- ============ LOBBY ============ -->
+  <div id="lobby" class="lobby">
+    <div class="lobby-card">
+      <h1>MASHA<span>AAAA</span></h1>
+      <p class="tagline">Peer-to-peer video chat with live English ⇄ Ukrainian translation</p>
+
+      <label for="nameInput">Your name</label>
+      <input id="nameInput" type="text" placeholder="e.g. Michael" maxlength="24" autocomplete="off" />
+
+      <label>I speak</label>
+      <div class="lang-toggle" id="langToggle">
+        <button data-lang="en" class="active">🇬🇧 English</button>
+        <button data-lang="uk">🇺🇦 Українська</button>
+      </div>
+
+      <label for="relayInput">DeepL relay URL <span class="optional">(optional — better translations)</span></label>
+      <input id="relayInput" type="url" placeholder="https://your-worker.workers.dev" autocomplete="off" />
+
+      <div class="lobby-actions">
+        <button id="createBtn" class="btn primary">Create room</button>
+        <div class="join-row">
+          <input id="joinInput" type="text" placeholder="Room code" maxlength="8" autocomplete="off" />
+          <button id="joinBtn" class="btn">Join</button>
+        </div>
+      </div>
+
+      <p id="lobbyStatus" class="lobby-status"></p>
+      <p class="hint">Use Chrome or Edge — required for live speech recognition.</p>
+    </div>
+  </div>
+
+  <!-- ============ MAIN APP ============ -->
+  <div id="app" class="app hidden">
+    <header class="topbar">
+      <div class="brand">MASHA<span>AAAA</span></div>
+      <div class="room-info">
+        <span>Room:</span>
+        <code id="roomCode"></code>
+        <button id="copyBtn" class="icon-btn" title="Copy room code">📋</button>
+      </div>
+      <div class="topbar-controls">
+        <button id="micBtn" class="icon-btn on" title="Toggle microphone">🎙️</button>
+        <button id="camBtn" class="icon-btn on" title="Toggle camera">📷</button>
+        <button id="sttBtn" class="icon-btn on" title="Toggle speech recognition">🗣️</button>
+        <button id="leaveBtn" class="icon-btn danger" title="Leave call">📞</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <!-- Video area -->
+      <section id="videoGrid" class="video-grid"></section>
+
+      <!-- Side panels -->
+      <aside class="panels">
+        <!-- Typed chat -->
+        <div class="panel" id="chatPanel">
+          <div class="panel-header">
+            <span>💬 Text chat</span>
+            <button class="min-btn" data-target="chatPanel" title="Minimise / maximise">—</button>
+          </div>
+          <div class="panel-body">
+            <div class="messages" id="chatMessages"></div>
+            <form id="chatForm" class="chat-form" autocomplete="off">
+              <input id="chatInput" type="text" placeholder="Type a message…" maxlength="500" />
+              <button type="submit" class="btn primary small">Send</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Voice transcript -->
+        <div class="panel" id="voicePanel">
+          <div class="panel-header">
+            <span>🗣️ Voice transcript</span>
+            <button class="min-btn" data-target="voicePanel" title="Minimise / maximise">—</button>
+          </div>
+          <div class="panel-body">
+            <div class="messages" id="voiceMessages"></div>
+            <div id="interimBar" class="interim-bar hidden"></div>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="translate.js"></script>
+  <script src="speech.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
