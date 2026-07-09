@@ -1,4 +1,4 @@
-# MASHAAAAA — P2P Video Chat with Live English ⇄ Ukrainian Translation
+P2P
 
 A serverless, peer-to-peer video chat for 2–3 people with:
 
