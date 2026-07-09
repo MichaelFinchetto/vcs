@@ -67,6 +67,17 @@ The default keyless translator is weak with slang and informal speech. DeepL is 
 
 Each participant translates incoming messages locally, so each person can set their own relay URL (or share one — the free quota is generous).
 
+## Fixing "stuck on Joining room" — TURN relay
+
+If a joiner hangs on "Joining room…" (common between countries, or when one side is on mobile/CGNAT), the direct P2P connection is being blocked by a strict NAT and you need a TURN relay to bridge it:
+
+1. Sign up free at https://www.metered.ca/tools/openrelay/ (Open Relay — 20GB/month free, no card).
+2. In their dashboard you get a **TURN credentials URL** like
+   `https://<yourapp>.metered.live/api/v1/turn/credentials?apiKey=<key>`.
+3. Paste it into the **TURN relay URL** field on the lobby screen — **both sides** should set it. It's remembered between visits.
+
+With TURN configured, calls that can't go direct are relayed encrypted through the TURN server (slightly higher latency, but they work). Connections that *can* go direct still do — TURN is only used as a last resort.
+
 ## Notes & limits
 
 - Speech recognition: Chrome/Edge only (Web Speech API). Firefox/Safari users still get video, chat, and can *read* others' transcripts.

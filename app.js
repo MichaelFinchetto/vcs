@@ -12,10 +12,12 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.5.0"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.6.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
+const TURN_STORAGE_KEY = "masha-turn-url";
+const JOIN_TIMEOUT_MS = 20000;
 
 // ---------- State ----------
 let peer = null;
@@ -27,6 +29,7 @@ let isHost = false;
 let sttEnabled = true;
 let rejoining = false;
 let rejoinAttempts = 0;
+let joinTimeout = null;
 
 /** peerId -> { conn, call, name, lang } */
 const peers = new Map();
@@ -78,10 +81,40 @@ $("versionBadge").textContent = `v${APP_VERSION}`;
 
 // Remember the DeepL relay URL between visits.
 $("relayInput").value = TranslateService.getRelayUrl();
+$("turnInput").value = localStorage.getItem(TURN_STORAGE_KEY) || "";
+
+/**
+ * STUN alone can't traverse strict NATs/CGNAT (common on mobile networks).
+ * If a TURN credentials URL is configured (e.g. Open Relay via metered.ca,
+ * free 20GB/month), fetch relay servers and add them to the ICE config.
+ */
+async function buildIceServers() {
+  const servers = [
+    {
+      urls: [
+        "stun:stun.l.google.com:19302",
+        "stun:stun1.l.google.com:19302",
+      ],
+    },
+  ];
+  const turnUrl = (localStorage.getItem(TURN_STORAGE_KEY) || "").trim();
+  if (turnUrl) {
+    try {
+      const res = await fetch(turnUrl);
+      if (!res.ok) throw new Error(`TURN fetch ${res.status}`);
+      const list = await res.json();
+      if (Array.isArray(list)) servers.push(...list);
+    } catch (e) {
+      console.warn("TURN credentials fetch failed — continuing without relay:", e);
+    }
+  }
+  return servers;
+}
 
 async function enterRoom(code, reuseCode) {
   myName = $("nameInput").value.trim() || "Guest";
   TranslateService.setRelayUrl($("relayInput").value);
+  localStorage.setItem(TURN_STORAGE_KEY, $("turnInput").value.trim());
   isHost = code === null;
   roomCode = isHost ? (reuseCode || generateRoomCode()) : code;
 
@@ -102,8 +135,12 @@ async function enterRoom(code, reuseCode) {
 
   setLobbyBusy(true, "Connecting to signaling network…");
 
+  const peerOptions = { config: { iceServers: await buildIceServers() } };
+
   // Host claims the room-coded ID; joiners get a random ID.
-  peer = isHost ? new Peer(ID_PREFIX + roomCode) : new Peer();
+  peer = isHost
+    ? new Peer(ID_PREFIX + roomCode, peerOptions)
+    : new Peer(peerOptions);
 
   peer.on("open", () => {
     if (isHost) {
@@ -111,6 +148,19 @@ async function enterRoom(code, reuseCode) {
     } else {
       setLobbyBusy(true, "Joining room…");
       connectToPeer(ID_PREFIX + roomCode, true);
+      // If ICE can't get through (strict NAT/CGNAT), nothing errors — it
+      // just hangs. Detect that and explain instead of spinning forever.
+      clearTimeout(joinTimeout);
+      joinTimeout = setTimeout(() => {
+        if (app.classList.contains("hidden")) {
+          setLobbyBusy(
+            false,
+            "Found the room, but couldn't establish a direct connection — " +
+              "usually a strict NAT/firewall. Add a free TURN relay URL " +
+              "(see README) and try again."
+          );
+        }
+      }, JOIN_TIMEOUT_MS);
     }
   });
 
@@ -377,6 +427,7 @@ function updateGridCount() {
 // Main app UI
 // ================================================================
 function showApp() {
+  clearTimeout(joinTimeout);
   lobby.classList.add("hidden");
   app.classList.remove("hidden");
   $("roomCode").textContent = roomCode;
