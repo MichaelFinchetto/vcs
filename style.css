@@ -336,6 +336,19 @@ body {
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
 }
 
+/* Version badge */
+.version-badge {
+  position: fixed;
+  bottom: 6px;
+  left: 10px;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  opacity: 0.6;
+  z-index: 50;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* Scrollbars */
 .messages::-webkit-scrollbar { width: 8px; }
 .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }

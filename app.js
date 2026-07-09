@@ -12,6 +12,7 @@
 "use strict";
 
 // ---------- Constants ----------
+const APP_VERSION = "0.4.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 
@@ -69,6 +70,8 @@ function generateRoomCode() {
     chars[Math.floor(Math.random() * chars.length)]
   ).join("");
 }
+
+$("versionBadge").textContent = `v${APP_VERSION}`;
 
 // Remember the DeepL relay URL between visits.
 $("relayInput").value = TranslateService.getRelayUrl();
