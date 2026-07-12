@@ -12,11 +12,12 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.7.0"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.8.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
-const TURN_STORAGE_KEY = "masha-turn-url";
+const TURN_CREDENTIALS_URL =
+  "https://mashagithub.metered.live/api/v1/turn/credentials?apiKey=1fe5f0f5dd60d32cdbf316fcf63a603c65ff";
 const JOIN_TIMEOUT_MS = 20000;
 
 // ---------- State ----------
@@ -81,10 +82,9 @@ $("versionBadge").textContent = `v${APP_VERSION}`;
 
 // Remember the DeepL relay URL between visits.
 $("relayInput").value = TranslateService.getRelayUrl();
-$("turnInput").value = localStorage.getItem(TURN_STORAGE_KEY) || "";
 
 // Public no-signup TURN servers (static credentials, best-effort community
-// services). Used only when no personal TURN URL is configured. WebRTC
+// services). Used only if the metered.ca credentials fetch fails. WebRTC
 // treats TURN as a last resort, so direct connections are always preferred.
 const PUBLIC_TURN_SERVERS = [
   {
@@ -105,9 +105,8 @@ const PUBLIC_TURN_SERVERS = [
 
 /**
  * STUN alone can't traverse strict NATs/CGNAT (common on mobile networks).
- * If a TURN credentials URL is configured (e.g. Open Relay via metered.ca,
- * free 20GB/month), fetch relay servers and add them to the ICE config;
- * otherwise fall back to the public no-signup TURN servers above.
+ * TURN relay servers are fetched automatically from metered.ca; if that
+ * fails, fall back to the public no-signup TURN servers above.
  */
 async function buildIceServers() {
   const servers = [
@@ -118,29 +117,22 @@ async function buildIceServers() {
       ],
     },
   ];
-  const turnUrl = (localStorage.getItem(TURN_STORAGE_KEY) || "").trim();
-  let haveCustomTurn = false;
-  if (turnUrl) {
-    try {
-      const res = await fetch(turnUrl);
-      if (!res.ok) throw new Error(`TURN fetch ${res.status}`);
-      const list = await res.json();
-      if (Array.isArray(list) && list.length) {
-        servers.push(...list);
-        haveCustomTurn = true;
-      }
-    } catch (e) {
-      console.warn("TURN credentials fetch failed — using public relays:", e);
-    }
+  try {
+    const res = await fetch(TURN_CREDENTIALS_URL);
+    if (!res.ok) throw new Error(`TURN fetch ${res.status}`);
+    const list = await res.json();
+    if (!Array.isArray(list) || !list.length) throw new Error("empty TURN list");
+    servers.push(...list);
+  } catch (e) {
+    console.warn("TURN credentials fetch failed — using public relays:", e);
+    servers.push(...PUBLIC_TURN_SERVERS);
   }
-  if (!haveCustomTurn) servers.push(...PUBLIC_TURN_SERVERS);
   return servers;
 }
 
 async function enterRoom(code, reuseCode) {
   myName = $("nameInput").value.trim() || "Guest";
   TranslateService.setRelayUrl($("relayInput").value);
-  localStorage.setItem(TURN_STORAGE_KEY, $("turnInput").value.trim());
   isHost = code === null;
   roomCode = isHost ? (reuseCode || generateRoomCode()) : code;
 
