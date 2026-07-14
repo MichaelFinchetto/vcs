@@ -12,7 +12,7 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.11.0"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.11.1"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
@@ -100,6 +100,16 @@ $("themeBtn").addEventListener("click", () => {
     THEMES[(THEMES.indexOf(document.body.dataset.theme) + 1) % THEMES.length];
   applyTheme(next);
   toast(`Theme: ${next}`);
+});
+
+// Tell the user (once per session) if DeepL fails and we fall back to the
+// keyless translators — translation quality drops but nothing breaks.
+TranslateService.setFallbackNotifier((reason) => {
+  toast("⚠️ DeepL unavailable — using backup translator");
+  addSystemMessage(
+    `⚠️ DeepL translation unavailable (${reason}) — using backup translator. · ` +
+      "DeepL недоступний — використовується резервний перекладач."
+  );
 });
 
 

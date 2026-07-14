@@ -13,6 +13,13 @@ const TranslateService = (() => {
 
   let relayHealthy = true; // demoted for the session after repeated failures
   let relayFailures = 0;
+  let onFallback = null; // notified (once per session) when DeepL fails
+  let fallbackNotified = false;
+
+  /** Register a callback fired the first time DeepL falls back. */
+  function setFallbackNotifier(cb) {
+    onFallback = cb;
+  }
 
   async function viaDeepLRelay(text, from, to) {
     const res = await fetch(RELAY_URL, {
@@ -71,6 +78,10 @@ const TranslateService = (() => {
       } catch (e) {
         console.warn("DeepL relay failed, falling back:", e);
         if (++relayFailures >= 3) relayHealthy = false;
+        if (!fallbackNotified && onFallback) {
+          fallbackNotified = true;
+          onFallback(e.message || String(e));
+        }
       }
     }
 
@@ -94,5 +105,5 @@ const TranslateService = (() => {
     return result;
   }
 
-  return { translate };
+  return { translate, setFallbackNotifier };
 })();
