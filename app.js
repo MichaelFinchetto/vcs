@@ -12,7 +12,7 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.10.0"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.11.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
@@ -158,19 +158,19 @@ async function enterRoom(code, reuseCode) {
   if (peer && !peer.destroyed) peer.destroy();
 
   if (!localStream) {
-    setLobbyBusy(true, "Requesting camera & microphone…");
+    setLobbyBusy(true, "Requesting camera & microphone… · Запит камери та мікрофона…");
     try {
       localStream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: { echoCancellation: true, noiseSuppression: true },
       });
     } catch (e) {
-      setLobbyBusy(false, "Camera/microphone access denied.");
+      setLobbyBusy(false, "Camera/microphone access denied. · Доступ до камери/мікрофона заборонено.");
       return;
     }
   }
 
-  setLobbyBusy(true, "Connecting to signaling network…");
+  setLobbyBusy(true, "Connecting… · З'єднання…");
 
   const peerOptions = { config: { iceServers: await buildIceServers() } };
 
@@ -183,7 +183,7 @@ async function enterRoom(code, reuseCode) {
     if (isHost) {
       showApp();
     } else {
-      setLobbyBusy(true, "Joining room…");
+      setLobbyBusy(true, "Joining room… · Приєднання до кімнати…");
       connectToPeer(ID_PREFIX + roomCode, true);
       // If ICE can't get through (strict NAT/CGNAT), nothing errors — it
       // just hangs. Detect that and explain instead of spinning forever.
@@ -192,9 +192,8 @@ async function enterRoom(code, reuseCode) {
         if (app.classList.contains("hidden")) {
           setLobbyBusy(
             false,
-            "Found the room, but couldn't establish a direct connection — " +
-              "usually a strict NAT/firewall. Add a free TURN relay URL " +
-              "(see README) and try again."
+            "Couldn't establish a connection (strict NAT/firewall?). Try again. · " +
+              "Не вдалося встановити з'єднання. Спробуйте ще раз."
           );
         }
       }, JOIN_TIMEOUT_MS);
@@ -225,7 +224,7 @@ async function enterRoom(code, reuseCode) {
         setTimeout(() => connectToPeer(ID_PREFIX + roomCode, true), 1500);
         return;
       }
-      setLobbyBusy(false, "Room not found. Check the code.");
+      setLobbyBusy(false, "Room not found. Check the code. · Кімнату не знайдено. Перевірте код.");
     } else {
       console.error("Peer error:", err);
       if (!app.classList.contains("hidden")) {
