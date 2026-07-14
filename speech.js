@@ -17,6 +17,9 @@ const SpeechService = (() => {
   let onError = null;
   let restartTimer = null;
   let recentRestarts = []; // timestamps, to detect crash loops
+  let watchdogTimer = null;
+  let lastActivity = 0; // last time the recognizer showed signs of life
+  let pendingInterim = ""; // in-progress text, flushed if the session dies
 
   function isSupported() {
     return "webkitSpeechRecognition" in window || "SpeechRecognition" in window;
@@ -42,11 +45,22 @@ const SpeechService = (() => {
           interim += text + " ";
         }
       }
-      if (onInterim) onInterim(interim.trim());
+      pendingInterim = interim.trim();
+      lastActivity = Date.now();
+      if (onInterim) onInterim(pendingInterim);
+    };
+
+    rec.onaudiostart = () => {
+      lastActivity = Date.now();
     };
 
     rec.onend = () => {
       running = false;
+      lastActivity = Date.now();
+      // Chrome discards interim text when a session ends — promote whatever
+      // was in progress to a final result so words aren't silently lost.
+      if (pendingInterim && wantRunning && onFinal) onFinal(pendingInterim);
+      pendingInterim = "";
       if (onInterim) onInterim("");
       if (!wantRunning) return;
 
@@ -87,6 +101,7 @@ const SpeechService = (() => {
     try {
       recognition.start();
       running = true;
+      lastActivity = Date.now();
     } catch (e) {
       /* start() throws if already started — ignore */
     }
@@ -109,12 +124,30 @@ const SpeechService = (() => {
     recognition = build(langCode);
     wantRunning = true;
     safeStart();
+
+    // Watchdog: Chrome's recognizer can go "zombie" — still nominally
+    // running but producing no events and never firing onend. If nothing
+    // has happened for 60s, abort() to force onend and a clean restart.
+    clearInterval(watchdogTimer);
+    watchdogTimer = setInterval(() => {
+      if (!wantRunning || !recognition) return;
+      if (Date.now() - lastActivity > 60000) {
+        console.warn("Speech recognition looks stalled — forcing restart.");
+        try {
+          recognition.abort();
+        } catch {
+          /* ignore */
+        }
+      }
+    }, 15000);
     return true;
   }
 
   function stop() {
     wantRunning = false;
     clearTimeout(restartTimer);
+    clearInterval(watchdogTimer);
+    pendingInterim = "";
     if (recognition) {
       try {
         recognition.stop();

@@ -24,6 +24,15 @@
         <button data-lang="uk">🇺🇦 Українська</button>
       </div>
 
+      <label>Theme</label>
+      <div class="theme-toggle" id="themeToggle">
+        <button data-theme="midnight" title="Midnight"></button>
+        <button data-theme="ocean" title="Ocean"></button>
+        <button data-theme="sunset" title="Sunset"></button>
+        <button data-theme="forest" title="Forest"></button>
+        <button data-theme="light" title="Light"></button>
+      </div>
+
       <label for="relayInput">DeepL relay URL <span class="optional">(optional — better translations)</span></label>
       <input id="relayInput" type="url" placeholder="https://your-worker.workers.dev" autocomplete="off" />
 
@@ -50,6 +59,7 @@
         <button id="copyBtn" class="icon-btn" title="Copy room code">📋</button>
       </div>
       <div class="topbar-controls">
+        <button id="themeBtn" class="icon-btn" title="Change colour theme">🎨</button>
         <button id="micBtn" class="icon-btn on" title="Toggle microphone">🎙️</button>
         <button id="camBtn" class="icon-btn on" title="Toggle camera">📷</button>
         <button id="sttBtn" class="icon-btn on" title="Toggle speech recognition">🗣️</button>

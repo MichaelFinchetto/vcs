@@ -12,13 +12,15 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.8.0"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.9.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
 const TURN_CREDENTIALS_URL =
   "https://mashagithub.metered.live/api/v1/turn/credentials?apiKey=1fe5f0f5dd60d32cdbf316fcf63a603c65ff";
 const JOIN_TIMEOUT_MS = 20000;
+const THEME_KEY = "masha-theme";
+const THEMES = ["midnight", "ocean", "sunset", "forest", "light"];
 
 // ---------- State ----------
 let peer = null;
@@ -79,6 +81,26 @@ function generateRoomCode() {
 }
 
 $("versionBadge").textContent = `v${APP_VERSION}`;
+
+// ---------- Colour themes ----------
+function applyTheme(name) {
+  if (!THEMES.includes(name)) name = THEMES[0];
+  document.body.dataset.theme = name;
+  localStorage.setItem(THEME_KEY, name);
+  document
+    .querySelectorAll("#themeToggle button")
+    .forEach((b) => b.classList.toggle("active", b.dataset.theme === name));
+}
+applyTheme(localStorage.getItem(THEME_KEY) || THEMES[0]);
+document
+  .querySelectorAll("#themeToggle button")
+  .forEach((b) => b.addEventListener("click", () => applyTheme(b.dataset.theme)));
+$("themeBtn").addEventListener("click", () => {
+  const next =
+    THEMES[(THEMES.indexOf(document.body.dataset.theme) + 1) % THEMES.length];
+  applyTheme(next);
+  toast(`Theme: ${next}`);
+});
 
 // Remember the DeepL relay URL between visits.
 $("relayInput").value = TranslateService.getRelayUrl();
@@ -578,16 +600,22 @@ function startSpeechRecognition() {
         "service-not-allowed":
           "⚠️ Speech recognition: blocked by the browser. Are you on HTTPS or localhost?",
         "restart-loop":
-          "⚠️ Speech recognition keeps failing and has been paused. Click 🗣️ twice to retry.",
+          "⚠️ Speech recognition keeps failing — paused, retrying in 30 seconds…",
         "language-not-supported":
           "⚠️ Speech recognition: this language isn't supported by your browser.",
       };
       addSystemMessage(
         explanations[errorCode] || `⚠️ Speech recognition error: ${errorCode}`
       );
-      if (errorCode === "restart-loop" || errorCode === "not-allowed") {
+      if (errorCode === "not-allowed") {
         $("sttBtn").classList.add("off");
         sttEnabled = false;
+      }
+      if (errorCode === "restart-loop") {
+        // Auto-recover instead of requiring a manual toggle.
+        setTimeout(() => {
+          if (sttEnabled) startSpeechRecognition();
+        }, 30000);
       }
     }
   );
@@ -618,15 +646,18 @@ async function renderMessage(container, { name, lang, text, mine }) {
   container.appendChild(el);
   scrollToBottom(container);
 
-  // Translate messages written in a different language than mine.
-  if (lang !== myLang) {
+  // Incoming messages in another language are translated into mine.
+  // My own messages also show what the other side will read, so the
+  // sender can sanity-check the translation.
+  const targetLang = mine ? (lang === "en" ? "uk" : "en") : myLang;
+  if (mine || lang !== myLang) {
     const translatedEl = document.createElement("div");
     translatedEl.className = "translated";
     translatedEl.innerHTML = `<span class="sys">translating…</span>`;
     el.appendChild(translatedEl);
     scrollToBottom(container);
 
-    const translated = await TranslateService.translate(text, lang, myLang);
+    const translated = await TranslateService.translate(text, lang, targetLang);
     translatedEl.textContent = `↳ ${translated}`;
     scrollToBottom(container);
   }
