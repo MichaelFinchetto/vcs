@@ -12,7 +12,7 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.9.0"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.10.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
@@ -102,8 +102,6 @@ $("themeBtn").addEventListener("click", () => {
   toast(`Theme: ${next}`);
 });
 
-// Remember the DeepL relay URL between visits.
-$("relayInput").value = TranslateService.getRelayUrl();
 
 // Public no-signup TURN servers (static credentials, best-effort community
 // services). Used only if the metered.ca credentials fetch fails. WebRTC
@@ -154,7 +152,6 @@ async function buildIceServers() {
 
 async function enterRoom(code, reuseCode) {
   myName = $("nameInput").value.trim() || "Guest";
-  TranslateService.setRelayUrl($("relayInput").value);
   isHost = code === null;
   roomCode = isHost ? (reuseCode || generateRoomCode()) : code;
 

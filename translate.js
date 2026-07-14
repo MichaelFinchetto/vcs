@@ -9,25 +9,13 @@
 const TranslateService = (() => {
   const cache = new Map(); // "from|to|text" -> translated
   const MAX_CACHE = 500;
-  const RELAY_STORAGE_KEY = "masha-deepl-relay-url";
+  const RELAY_URL = "https://masha-deepl-relay.mpearcey775.workers.dev";
 
-  let relayUrl = localStorage.getItem(RELAY_STORAGE_KEY) || "";
   let relayHealthy = true; // demoted for the session after repeated failures
   let relayFailures = 0;
 
-  function setRelayUrl(url) {
-    relayUrl = (url || "").trim().replace(/\/+$/, "");
-    relayHealthy = true;
-    relayFailures = 0;
-    localStorage.setItem(RELAY_STORAGE_KEY, relayUrl);
-  }
-
-  function getRelayUrl() {
-    return relayUrl;
-  }
-
   async function viaDeepLRelay(text, from, to) {
-    const res = await fetch(relayUrl, {
+    const res = await fetch(RELAY_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, from, to }),
@@ -76,7 +64,7 @@ const TranslateService = (() => {
 
     let result = null;
 
-    if (relayUrl && relayHealthy) {
+    if (relayHealthy) {
       try {
         result = await viaDeepLRelay(text, from, to);
         relayFailures = 0;
@@ -106,5 +94,5 @@ const TranslateService = (() => {
     return result;
   }
 
-  return { translate, setRelayUrl, getRelayUrl };
+  return { translate };
 })();
