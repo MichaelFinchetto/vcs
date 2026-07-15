@@ -1,9 +1,14 @@
 /**
- * Cloudflare Worker — DeepL relay for MASHAAAAA.
+ * Cloudflare Worker — DeepL relay + TURN credentials for MASHAAAAA.
  *
- * DeepL's API doesn't allow direct browser calls (no CORS), so this tiny
- * relay forwards translation requests and adds CORS headers. Your DeepL
- * API key stays here as a Worker secret, never exposed to the page.
+ * POST /      — translation. DeepL's API doesn't allow direct browser calls
+ *               (no CORS), so this relay forwards requests and adds CORS
+ *               headers. Your DeepL API key stays here as a Worker secret.
+ * GET  /turn  — mints short-lived Cloudflare TURN credentials (1,000GB/month
+ *               free). Requires a TURN key: dash.cloudflare.com → Realtime →
+ *               TURN Server → Create. Then set two more secrets:
+ *                 npx wrangler secret put TURN_KEY_ID     (the Key ID)
+ *                 npx wrangler secret put TURN_API_TOKEN  (the API token)
  *
  * Setup (free, ~5 minutes). First get a DeepL API Free key:
  * https://www.deepl.com/pro-api (free plan, 500k chars/month).
@@ -24,9 +29,11 @@
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
+
+const TURN_CRED_TTL_SECONDS = 6 * 60 * 60; // plenty for one call; re-minted per join
 
 // DeepL language codes for the languages the app supports.
 const SOURCE_CODES = { en: "EN", uk: "UK" };
@@ -37,6 +44,12 @@ export default {
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: CORS_HEADERS });
     }
+
+    const url = new URL(request.url);
+    if (url.pathname === "/turn") {
+      return handleTurn(env);
+    }
+
     if (request.method !== "POST") {
       return json({ error: "POST only" }, 405);
     }
@@ -85,6 +98,42 @@ export default {
     return json({ translated });
   },
 };
+
+/**
+ * Mint short-lived TURN credentials from Cloudflare's Realtime TURN service.
+ * The API token never leaves the worker — the browser only ever sees
+ * disposable credentials that expire after TURN_CRED_TTL_SECONDS.
+ * Responds with an array ready to drop into RTCPeerConnection iceServers.
+ */
+async function handleTurn(env) {
+  if (!env.TURN_KEY_ID || !env.TURN_API_TOKEN) {
+    return json({ error: "TURN not configured" }, 503);
+  }
+
+  const res = await fetch(
+    `https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.TURN_API_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ ttl: TURN_CRED_TTL_SECONDS }),
+    }
+  );
+
+  if (!res.ok) {
+    return json({ error: `TURN API ${res.status}` }, 502);
+  }
+
+  const data = await res.json();
+  // Normalise: the API returns { iceServers: [...] } (or a single object on
+  // the older generate endpoint) — always hand the app a flat array.
+  const servers = Array.isArray(data.iceServers)
+    ? data.iceServers
+    : [data.iceServers];
+  return json(servers);
+}
 
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {

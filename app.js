@@ -12,11 +12,14 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.11.2"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.12.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
-const TURN_CREDENTIALS_URL =
+// Preferred: Cloudflare TURN via our worker (1,000GB/month free).
+const CF_TURN_URL = "https://masha-deepl-relay.mpearcey775.workers.dev/turn";
+// Fallback: metered.ca (20GB/month free).
+const METERED_TURN_URL =
   "https://mashagithub.metered.live/api/v1/turn/credentials?apiKey=1fe5f0f5dd60d32cdbf316fcf63a603c65ff";
 const JOIN_TIMEOUT_MS = 20000;
 const THEME_KEY = "masha-theme";
@@ -133,10 +136,18 @@ const PUBLIC_TURN_SERVERS = [
   },
 ];
 
+async function fetchTurnServers(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`TURN fetch ${res.status}`);
+  const list = await res.json();
+  if (!Array.isArray(list) || !list.length) throw new Error("empty TURN list");
+  return list;
+}
+
 /**
  * STUN alone can't traverse strict NATs/CGNAT (common on mobile networks).
- * TURN relay servers are fetched automatically from metered.ca; if that
- * fails, fall back to the public no-signup TURN servers above.
+ * TURN relays, in order of preference: Cloudflare (via our worker),
+ * metered.ca, then the public no-signup servers above.
  */
 async function buildIceServers() {
   const servers = [
@@ -148,15 +159,18 @@ async function buildIceServers() {
     },
   ];
   try {
-    const res = await fetch(TURN_CREDENTIALS_URL);
-    if (!res.ok) throw new Error(`TURN fetch ${res.status}`);
-    const list = await res.json();
-    if (!Array.isArray(list) || !list.length) throw new Error("empty TURN list");
-    servers.push(...list);
+    servers.push(...(await fetchTurnServers(CF_TURN_URL)));
+    return servers;
   } catch (e) {
-    console.warn("TURN credentials fetch failed — using public relays:", e);
-    servers.push(...PUBLIC_TURN_SERVERS);
+    console.warn("Cloudflare TURN unavailable, trying metered.ca:", e);
   }
+  try {
+    servers.push(...(await fetchTurnServers(METERED_TURN_URL)));
+    return servers;
+  } catch (e) {
+    console.warn("metered.ca TURN failed — using public relays:", e);
+  }
+  servers.push(...PUBLIC_TURN_SERVERS);
   return servers;
 }
 
