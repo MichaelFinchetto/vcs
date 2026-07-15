@@ -272,6 +272,36 @@ body {
   font-size: 0.82rem;
 }
 
+.video-tile .volume-ctrl {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.video-tile:hover .volume-ctrl,
+.video-tile .volume-ctrl:focus-within {
+  opacity: 1;
+}
+.volume-ctrl span { min-width: 3.6em; text-align: right; white-space: nowrap; }
+.volume-ctrl input[type="range"] {
+  width: 90px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+@media (hover: none) {
+  .video-tile .volume-ctrl { opacity: 1; }
+}
+
 /* ============ Panels ============ */
 .panels {
   width: 360px;

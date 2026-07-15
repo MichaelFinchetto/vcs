@@ -12,7 +12,7 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.12.0"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.13.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
@@ -24,6 +24,7 @@ const METERED_TURN_URL =
 const JOIN_TIMEOUT_MS = 20000;
 const THEME_KEY = "masha-theme";
 const THEMES = ["midnight", "ocean", "sunset", "forest", "light"];
+const VOLUME_KEY = "masha-volume"; // remembered slider position (1 = 100%)
 
 // ---------- State ----------
 let peer = null;
@@ -347,6 +348,16 @@ function removePeer(id) {
   if (!info) return;
   peers.delete(id);
   if (info.call) info.call.close();
+  const node = gainNodes.get(id);
+  if (node) {
+    try {
+      node.source.disconnect();
+      node.gain.disconnect();
+    } catch {
+      /* already disconnected */
+    }
+    gainNodes.delete(id);
+  }
   const tile = document.getElementById(`tile-${id}`);
   if (tile) tile.remove();
   updateGridCount();
@@ -465,13 +476,99 @@ function addVideoTile(id, stream, isLocal) {
 
     tile.appendChild(video);
     tile.appendChild(tag);
+    if (!isLocal) tile.appendChild(buildVolumeControl(id));
     videoGrid.appendChild(tile);
   }
-  tile.querySelector("video").srcObject = stream;
+  const video = tile.querySelector("video");
+  video.srcObject = stream;
+  if (!isLocal) wireTileAudio(id, stream, video);
   tile.querySelector(".name-tag").textContent = isLocal
     ? `${myName} (you)`
     : displayName(peers.get(id) || { name: "Guest", lang: "en" });
   updateGridCount();
+}
+
+// ---------- Per-participant volume (Web Audio gain, allows >100% boost) ----------
+let audioCtx = null;
+const gainNodes = new Map(); // peer id -> { source, gain }
+
+function savedVolume() {
+  const v = parseFloat(localStorage.getItem(VOLUME_KEY));
+  return Number.isFinite(v) ? Math.min(Math.max(v, 0), 2) : 1;
+}
+
+/**
+ * Route a remote stream through a GainNode so its volume is adjustable
+ * independently of system volume — including boosting up to 200%. The
+ * video element is muted (audio flows via Web Audio instead) but must
+ * stay attached to the stream: Chrome won't feed a remote stream into
+ * Web Audio unless a media element is also consuming it.
+ */
+function wireTileAudio(id, stream, video) {
+  try {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === "suspended") audioCtx.resume();
+
+    const old = gainNodes.get(id);
+    if (old) {
+      try {
+        old.source.disconnect();
+        old.gain.disconnect();
+      } catch {
+        /* already disconnected */
+      }
+    }
+
+    const source = audioCtx.createMediaStreamSource(stream);
+    const gain = audioCtx.createGain();
+    gain.gain.value = savedVolume();
+    source.connect(gain);
+    gain.connect(audioCtx.destination);
+    gainNodes.set(id, { source, gain });
+    video.muted = true;
+  } catch (e) {
+    // No Web Audio — fall back to the element's own volume (capped at 100%).
+    console.warn("Web Audio unavailable — volume capped at 100%:", e);
+    video.muted = false;
+    video.volume = Math.min(savedVolume(), 1);
+  }
+}
+
+function buildVolumeControl(id) {
+  const wrap = document.createElement("div");
+  wrap.className = "volume-ctrl";
+  wrap.title = "Volume for this person only · Гучність лише цієї людини";
+
+  const label = document.createElement("span");
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.min = "0";
+  slider.max = "200";
+  slider.step = "5";
+
+  const initial = Math.round(savedVolume() * 100);
+  slider.value = String(initial);
+  label.textContent = `🔊 ${initial}%`;
+
+  slider.addEventListener("input", () => {
+    const pct = Number(slider.value);
+    const v = pct / 100;
+    label.textContent = `${pct === 0 ? "🔇" : "🔊"} ${pct}%`;
+    localStorage.setItem(VOLUME_KEY, String(v));
+    const node = gainNodes.get(id);
+    if (node) {
+      node.gain.gain.value = v;
+    } else {
+      const vid = document.querySelector(`#tile-${id} video`);
+      if (vid) vid.volume = Math.min(v, 1);
+    }
+  });
+
+  wrap.appendChild(label);
+  wrap.appendChild(slider);
+  return wrap;
 }
 
 function displayName(info) {
