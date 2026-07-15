@@ -12,7 +12,7 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.13.0"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.14.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
@@ -734,7 +734,8 @@ function startSpeechRecognition() {
           if (sttEnabled) startSpeechRecognition();
         }, 30000);
       }
-    }
+    },
+    localStream // mic stream — lets the recognizer detect ignored speech
   );
 }
 
