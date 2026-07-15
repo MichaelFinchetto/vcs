@@ -126,20 +126,25 @@ const SpeechService = (() => {
     safeStart();
 
     // Watchdog: Chrome's recognizer can go "zombie" — still nominally
-    // running but producing no events and never firing onend. If nothing
-    // has happened for 60s, abort() to force onend and a clean restart.
+    // running but producing no events and never firing onend. 20s without
+    // any event means either genuine silence (restarting is harmless —
+    // there's nothing in flight to lose) or a stall (restarting is the
+    // fix), so abort() to force onend and a clean restart. While someone
+    // is speaking, results arrive continuously, so this never interrupts
+    // an utterance.
     clearInterval(watchdogTimer);
     watchdogTimer = setInterval(() => {
       if (!wantRunning || !recognition) return;
-      if (Date.now() - lastActivity > 60000) {
+      if (Date.now() - lastActivity > 20000) {
         console.warn("Speech recognition looks stalled — forcing restart.");
+        lastActivity = Date.now(); // don't re-abort before the restart lands
         try {
           recognition.abort();
         } catch {
           /* ignore */
         }
       }
-    }, 15000);
+    }, 5000);
     return true;
   }
 
