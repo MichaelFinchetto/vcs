@@ -12,7 +12,7 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.15.0"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.16.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
@@ -749,6 +749,11 @@ function startSpeechRecognition() {
           "⚠️ Speech recognition keeps failing — paused, retrying in 30 seconds…",
         "language-not-supported":
           "⚠️ Speech recognition: this language isn't supported by your browser.",
+        "quiet-mic":
+          "🎙️ Your voice is coming through very quietly — this can make transcription unreliable. " +
+          "Try raising your microphone input volume (Mac: System Settings → Sound → Input) or sitting closer. · " +
+          "Ваш голос звучить дуже тихо — це може погіршувати розпізнавання мови. " +
+          "Спробуйте збільшити гучність мікрофона (Mac: Системні налаштування → Звук → Вхід) або сісти ближче.",
       };
       addSystemMessage(
         explanations[errorCode] || `⚠️ Speech recognition error: ${errorCode}`

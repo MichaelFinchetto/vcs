@@ -30,8 +30,12 @@ const SpeechService = (() => {
   let lastVoice = 0; // last time the mic heard speech-level energy
   let noiseFloor = 0.01; // rolling estimate of ambient/quiet-room level
   let onLevel = null; // optional UI callback: (rms, speaking, threshold)
-  const STALL_AFTER_SPEECH_MS = 6000; // speech w/o recognition events = stall
+  let runPeak = 0; // loudest moment of the current speech run
+  let recentPeaks = []; // peaks of recent speech runs, for quiet-mic detection
+  let quietMicWarned = false; // only nag once per session
+  const STALL_AFTER_SPEECH_MS = 3500; // speech w/o recognition events = stall
   const BACKSTOP_MS = 30000; // absolute ceiling, e.g. if speech is too quiet for VAD
+  const QUIET_PEAK = 0.035; // speech peaking below this = probably too quiet
 
   function isSupported() {
     return "webkitSpeechRecognition" in window || "SpeechRecognition" in window;
@@ -60,7 +64,7 @@ const SpeechService = (() => {
 
         // Adaptive threshold: speech = clearly above the room's noise floor.
         // A fixed threshold misses quiet speakers / low mic gain entirely.
-        const threshold = Math.min(Math.max(noiseFloor * 3, 0.015), 0.06);
+        const threshold = Math.min(Math.max(noiseFloor * 3, 0.01), 0.06);
         const speaking = rms > threshold;
         if (!speaking) {
           // Learn the noise floor only from non-speech; drift slowly.
@@ -70,8 +74,24 @@ const SpeechService = (() => {
         if (speaking) {
           if (!voiceRunStart) voiceRunStart = now;
           lastVoice = now;
+          if (rms > runPeak) runPeak = rms;
         } else if (now - lastVoice > 1000) {
-          voiceRunStart = 0; // speech run ended
+          // Speech run ended — check whether it was worryingly quiet.
+          if (voiceRunStart && lastVoice - voiceRunStart > 1500) {
+            recentPeaks.push(runPeak);
+            if (recentPeaks.length > 5) recentPeaks.shift();
+            const lastThree = recentPeaks.slice(-3);
+            if (
+              !quietMicWarned &&
+              lastThree.length === 3 &&
+              lastThree.every((p) => p < QUIET_PEAK)
+            ) {
+              quietMicWarned = true;
+              if (onError) onError("quiet-mic");
+            }
+          }
+          voiceRunStart = 0;
+          runPeak = 0;
         }
         if (onLevel) onLevel(rms, speaking, threshold);
       }, 250);
@@ -86,6 +106,8 @@ const SpeechService = (() => {
     vadTimer = null;
     voiceRunStart = 0;
     lastVoice = 0;
+    runPeak = 0;
+    recentPeaks = [];
     if (vadCtx) {
       vadCtx.close().catch(() => {});
       vadCtx = null;
@@ -230,7 +252,7 @@ const SpeechService = (() => {
           /* ignore */
         }
       }
-    }, 2000);
+    }, 1000);
     return true;
   }
 
