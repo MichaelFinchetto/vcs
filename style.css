@@ -14,46 +14,6 @@
   font-size: 15px;
 }
 
-/* ============ Colour themes ============ */
-body[data-theme="ocean"] {
-  --bg: #0a1418;
-  --bg-2: #101d23;
-  --bg-3: #16282f;
-  --border: #24404a;
-  --accent: #2dd4bf;
-  --accent-2: #7dd3fc;
-  --accent-soft: rgba(45, 212, 191, 0.14);
-}
-body[data-theme="sunset"] {
-  --bg: #171010;
-  --bg-2: #211615;
-  --bg-3: #2d1e1a;
-  --border: #45302a;
-  --accent: #ff8a4f;
-  --accent-2: #ffd34f;
-  --accent-soft: rgba(255, 138, 79, 0.14);
-}
-body[data-theme="forest"] {
-  --bg: #0e1410;
-  --bg-2: #141d16;
-  --bg-3: #1b2820;
-  --border: #2b3d31;
-  --accent: #3ecf8e;
-  --accent-2: #d9e97a;
-  --accent-soft: rgba(62, 207, 142, 0.14);
-}
-body[data-theme="light"] {
-  --bg: #f2f4f8;
-  --bg-2: #ffffff;
-  --bg-3: #e8ecf3;
-  --border: #c9d2e0;
-  --text: #1c2333;
-  --text-dim: #5b667d;
-  --accent: #2f6fe4;
-  --accent-2: #a16207;
-  --accent-soft: rgba(47, 111, 228, 0.12);
-}
-
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
@@ -135,45 +95,49 @@ body {
   background: var(--accent-soft);
 }
 
-.theme-toggle { display: flex; gap: 10px; }
-.theme-toggle button {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: 2px solid var(--border);
+/* Colour picker: a clean input-style row in the lobby, icon-button in-call.
+   The wheel itself is a native colour input disguised as a rainbow swatch. */
+.theme-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
   cursor: pointer;
-  padding: 0;
-  transition: all 0.15s;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  transition: border-color 0.15s;
 }
-.theme-toggle button:hover { border-color: var(--text-dim); }
-.theme-toggle button.active { border-color: var(--text); transform: scale(1.15); }
-.theme-toggle button[data-theme="midnight"] { background: #4f8cff; }
-.theme-toggle button[data-theme="ocean"] { background: #2dd4bf; }
-.theme-toggle button[data-theme="sunset"] { background: #ff8a4f; }
-.theme-toggle button[data-theme="forest"] { background: #3ecf8e; }
-.theme-toggle button[data-theme="light"] { background: #f6f7fa; }
+.theme-picker:hover { border-color: var(--accent); color: var(--text); }
 
-/* Colour wheel: native picker disguised as a rainbow swatch */
-.theme-wheel {
-  width: 30px;
-  height: 30px;
+input[type="color"].theme-wheel {
+  width: 22px;
+  height: 22px;
   padding: 0;
-  border: 2px solid var(--border);
+  border: none;
   border-radius: 50%;
   cursor: pointer;
+  flex-shrink: 0;
   background: conic-gradient(
     #ff5f56, #ffd34f, #3ecf8e, #2dd4bf, #4f8cff, #b78cff, #ff5f56
   );
-  transition: all 0.15s;
 }
-.theme-wheel:hover { border-color: var(--text-dim); transform: scale(1.1); }
-.theme-wheel::-webkit-color-swatch-wrapper { padding: 0; }
-.theme-wheel::-webkit-color-swatch {
+input[type="color"].theme-wheel::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"].theme-wheel::-webkit-color-swatch {
   border: none;
   border-radius: 50%;
   opacity: 0; /* show the rainbow ring, not the current value */
 }
-.topbar-controls .theme-wheel { width: 26px; height: 26px; }
+
+/* In-call: match the icon buttons exactly */
+.theme-picker-top {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.theme-picker-top .theme-wheel { width: 18px; height: 18px; }
 
 .lobby-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
 .join-row { display: flex; gap: 8px; }

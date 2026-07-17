@@ -12,7 +12,7 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.17.0"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.17.1"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
@@ -23,7 +23,6 @@ const METERED_TURN_URL =
   "https://mashagithub.metered.live/api/v1/turn/credentials?apiKey=1fe5f0f5dd60d32cdbf316fcf63a603c65ff";
 const JOIN_TIMEOUT_MS = 20000;
 const THEME_KEY = "masha-theme";
-const THEMES = ["midnight", "ocean", "sunset", "forest", "light"];
 const VOLUME_KEY = "masha-volume"; // remembered slider position (1 = 100%)
 
 // ---------- State ----------
@@ -87,17 +86,17 @@ function generateRoomCode() {
 $("versionBadge").textContent = `v${APP_VERSION}`;
 
 // ---------- Colour themes ----------
-// Preset names live in THEMES; a colour-wheel pick is stored as "custom:#rrggbb"
-// and generates a full dark palette from that colour's hue.
-const CUSTOM_THEME_VARS = [
-  "--bg",
-  "--bg-2",
-  "--bg-3",
-  "--border",
-  "--accent",
-  "--accent-2",
-  "--accent-soft",
-];
+// One colour pick generates the whole palette from its hue. Stored as
+// "custom:#rrggbb"; saved preset names from older versions map to the
+// closest colour so nobody loses their theme on upgrade.
+const DEFAULT_THEME_HEX = "#4f8cff";
+const LEGACY_THEMES = {
+  midnight: "#4f8cff",
+  ocean: "#2dd4bf",
+  sunset: "#ff8a4f",
+  forest: "#3ecf8e",
+  light: "#4f8cff",
+};
 
 function hexToHsl(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -119,7 +118,8 @@ function hexToHsl(hex) {
   return { h: Math.round(h), s: Math.round(s * 100), l: Math.round(l * 100) };
 }
 
-function applyCustomTheme(hex) {
+function applyTheme(hex) {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) hex = DEFAULT_THEME_HEX;
   const { h, s, l } = hexToHsl(hex);
   // Tame extremes so any pick stays readable: backgrounds get a muted tint
   // of the hue, the accent keeps the colour's character but stays visible.
@@ -134,43 +134,21 @@ function applyCustomTheme(hex) {
   set("--accent", `hsl(${h}, ${accentSat}%, ${accentL}%)`);
   set("--accent-2", `hsl(${(h + 45) % 360}, 85%, 70%)`);
   set("--accent-soft", `hsla(${h}, ${accentSat}%, ${accentL}%, 0.16)`);
-  document.body.dataset.theme = "custom";
   localStorage.setItem(THEME_KEY, `custom:${hex}`);
-  document
-    .querySelectorAll("#themeToggle button")
-    .forEach((b) => b.classList.remove("active"));
   document.querySelectorAll(".theme-wheel").forEach((input) => {
     if (input.value !== hex) input.value = hex;
   });
 }
 
-function applyTheme(name) {
-  if (name && name.startsWith("custom:")) {
-    applyCustomTheme(name.slice(7));
-    return;
-  }
-  if (!THEMES.includes(name)) name = THEMES[0];
-  // Clear any inline custom-theme variables so the preset's CSS wins.
-  CUSTOM_THEME_VARS.forEach((v) => document.body.style.removeProperty(v));
-  document.body.dataset.theme = name;
-  localStorage.setItem(THEME_KEY, name);
-  document
-    .querySelectorAll("#themeToggle button")
-    .forEach((b) => b.classList.toggle("active", b.dataset.theme === name));
-}
-applyTheme(localStorage.getItem(THEME_KEY) || THEMES[0]);
-document
-  .querySelectorAll("#themeToggle button")
-  .forEach((b) => b.addEventListener("click", () => applyTheme(b.dataset.theme)));
+(function initTheme() {
+  const saved = localStorage.getItem(THEME_KEY) || "";
+  const hex = saved.startsWith("custom:")
+    ? saved.slice(7)
+    : LEGACY_THEMES[saved] || DEFAULT_THEME_HEX;
+  applyTheme(hex);
+})();
 document.querySelectorAll(".theme-wheel").forEach((input) => {
-  input.addEventListener("input", () => applyTheme(`custom:${input.value}`));
-});
-$("themeBtn").addEventListener("click", () => {
-  // From a custom theme, indexOf is -1 so cycling lands back on preset 0.
-  const next =
-    THEMES[(THEMES.indexOf(document.body.dataset.theme) + 1) % THEMES.length];
-  applyTheme(next);
-  toast(`Theme: ${next}`);
+  input.addEventListener("input", () => applyTheme(input.value));
 });
 
 // Tell the user (once per session) if DeepL fails and we fall back to the

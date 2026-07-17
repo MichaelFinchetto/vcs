@@ -25,14 +25,10 @@
       </div>
 
       <label>Theme · Тема</label>
-      <div class="theme-toggle" id="themeToggle">
-        <button data-theme="midnight" title="Midnight"></button>
-        <button data-theme="ocean" title="Ocean"></button>
-        <button data-theme="sunset" title="Sunset"></button>
-        <button data-theme="forest" title="Forest"></button>
-        <button data-theme="light" title="Light"></button>
-        <input type="color" class="theme-wheel" value="#4f8cff" title="Any colour you like · Будь-який колір" />
-      </div>
+      <label class="theme-picker" title="Any colour you like · Будь-який колір">
+        <input type="color" class="theme-wheel" value="#4f8cff" />
+        <span>Choose any colour · Оберіть будь-який колір</span>
+      </label>
 
       <div class="lobby-actions">
         <button id="createBtn" class="btn primary">Create room · Створити кімнату</button>
@@ -57,8 +53,9 @@
         <button id="copyBtn" class="icon-btn" title="Copy room code">📋</button>
       </div>
       <div class="topbar-controls">
-        <button id="themeBtn" class="icon-btn" title="Change colour theme">🎨</button>
-        <input type="color" class="theme-wheel" value="#4f8cff" title="Any colour you like · Будь-який колір" />
+        <label class="icon-btn theme-picker-top" title="Theme colour · Колір теми">
+          <input type="color" class="theme-wheel" value="#4f8cff" />
+        </label>
         <button id="micBtn" class="icon-btn on" title="Toggle microphone">🎙️</button>
         <button id="camBtn" class="icon-btn on" title="Toggle camera">📷</button>
         <button id="sttBtn" class="icon-btn on" title="Toggle speech recognition">🗣️</button>
