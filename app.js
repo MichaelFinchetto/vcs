@@ -12,7 +12,7 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.16.0"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.17.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
@@ -87,8 +87,71 @@ function generateRoomCode() {
 $("versionBadge").textContent = `v${APP_VERSION}`;
 
 // ---------- Colour themes ----------
+// Preset names live in THEMES; a colour-wheel pick is stored as "custom:#rrggbb"
+// and generates a full dark palette from that colour's hue.
+const CUSTOM_THEME_VARS = [
+  "--bg",
+  "--bg-2",
+  "--bg-3",
+  "--border",
+  "--accent",
+  "--accent-2",
+  "--accent-soft",
+];
+
+function hexToHsl(hex) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+  }
+  return { h: Math.round(h), s: Math.round(s * 100), l: Math.round(l * 100) };
+}
+
+function applyCustomTheme(hex) {
+  const { h, s, l } = hexToHsl(hex);
+  // Tame extremes so any pick stays readable: backgrounds get a muted tint
+  // of the hue, the accent keeps the colour's character but stays visible.
+  const bgSat = Math.min(Math.max(s, 15), 35);
+  const accentSat = Math.max(s, 55);
+  const accentL = Math.min(Math.max(l, 48), 68);
+  const set = (k, v) => document.body.style.setProperty(k, v);
+  set("--bg", `hsl(${h}, ${bgSat}%, 8%)`);
+  set("--bg-2", `hsl(${h}, ${Math.max(bgSat - 4, 12)}%, 12%)`);
+  set("--bg-3", `hsl(${h}, ${Math.max(bgSat - 6, 10)}%, 17%)`);
+  set("--border", `hsl(${h}, ${Math.max(bgSat - 8, 10)}%, 27%)`);
+  set("--accent", `hsl(${h}, ${accentSat}%, ${accentL}%)`);
+  set("--accent-2", `hsl(${(h + 45) % 360}, 85%, 70%)`);
+  set("--accent-soft", `hsla(${h}, ${accentSat}%, ${accentL}%, 0.16)`);
+  document.body.dataset.theme = "custom";
+  localStorage.setItem(THEME_KEY, `custom:${hex}`);
+  document
+    .querySelectorAll("#themeToggle button")
+    .forEach((b) => b.classList.remove("active"));
+  document.querySelectorAll(".theme-wheel").forEach((input) => {
+    if (input.value !== hex) input.value = hex;
+  });
+}
+
 function applyTheme(name) {
+  if (name && name.startsWith("custom:")) {
+    applyCustomTheme(name.slice(7));
+    return;
+  }
   if (!THEMES.includes(name)) name = THEMES[0];
+  // Clear any inline custom-theme variables so the preset's CSS wins.
+  CUSTOM_THEME_VARS.forEach((v) => document.body.style.removeProperty(v));
   document.body.dataset.theme = name;
   localStorage.setItem(THEME_KEY, name);
   document
@@ -99,7 +162,11 @@ applyTheme(localStorage.getItem(THEME_KEY) || THEMES[0]);
 document
   .querySelectorAll("#themeToggle button")
   .forEach((b) => b.addEventListener("click", () => applyTheme(b.dataset.theme)));
+document.querySelectorAll(".theme-wheel").forEach((input) => {
+  input.addEventListener("input", () => applyTheme(`custom:${input.value}`));
+});
 $("themeBtn").addEventListener("click", () => {
+  // From a custom theme, indexOf is -1 so cycling lands back on preset 0.
   const next =
     THEMES[(THEMES.indexOf(document.body.dataset.theme) + 1) % THEMES.length];
   applyTheme(next);

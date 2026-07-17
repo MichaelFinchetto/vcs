@@ -153,6 +153,28 @@ body {
 .theme-toggle button[data-theme="forest"] { background: #3ecf8e; }
 .theme-toggle button[data-theme="light"] { background: #f6f7fa; }
 
+/* Colour wheel: native picker disguised as a rainbow swatch */
+.theme-wheel {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+  background: conic-gradient(
+    #ff5f56, #ffd34f, #3ecf8e, #2dd4bf, #4f8cff, #b78cff, #ff5f56
+  );
+  transition: all 0.15s;
+}
+.theme-wheel:hover { border-color: var(--text-dim); transform: scale(1.1); }
+.theme-wheel::-webkit-color-swatch-wrapper { padding: 0; }
+.theme-wheel::-webkit-color-swatch {
+  border: none;
+  border-radius: 50%;
+  opacity: 0; /* show the rainbow ring, not the current value */
+}
+.topbar-controls .theme-wheel { width: 26px; height: 26px; }
+
 .lobby-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
 .join-row { display: flex; gap: 8px; }
 .join-row input { text-transform: uppercase; letter-spacing: 2px; }
