@@ -12,7 +12,7 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.14.0"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.15.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
@@ -477,6 +477,7 @@ function addVideoTile(id, stream, isLocal) {
     tile.appendChild(video);
     tile.appendChild(tag);
     if (!isLocal) tile.appendChild(buildVolumeControl(id));
+    if (isLocal) tile.appendChild(buildMicMeter());
     videoGrid.appendChild(tile);
   }
   const video = tile.querySelector("video");
@@ -569,6 +570,34 @@ function buildVolumeControl(id) {
   wrap.appendChild(label);
   wrap.appendChild(slider);
   return wrap;
+}
+
+// Mic level meter on the local tile — shows whether your voice is actually
+// registering (green = loud enough to count as speech, grey = below the
+// speech threshold). Doubles as a diagnostic for quiet-mic problems.
+function buildMicMeter() {
+  const wrap = document.createElement("div");
+  wrap.className = "mic-meter";
+  wrap.title = "Mic level — green means your voice is registering · Рівень мікрофона — зелений означає, що ваш голос чутно";
+  const icon = document.createElement("span");
+  icon.textContent = "🎙️";
+  const bar = document.createElement("div");
+  bar.className = "mic-meter-bar";
+  const fill = document.createElement("div");
+  fill.className = "mic-meter-fill";
+  bar.appendChild(fill);
+  wrap.appendChild(icon);
+  wrap.appendChild(bar);
+  return wrap;
+}
+
+function updateMicMeter(rms, speaking) {
+  const fill = document.querySelector(".mic-meter-fill");
+  if (!fill) return;
+  // sqrt scaling makes quiet speech visible instead of a sliver
+  const pct = Math.min(100, Math.round(Math.sqrt(rms) * 250));
+  fill.style.width = `${pct}%`;
+  fill.classList.toggle("speaking", speaking);
 }
 
 function displayName(info) {
@@ -735,7 +764,8 @@ function startSpeechRecognition() {
         }, 30000);
       }
     },
-    localStream // mic stream — lets the recognizer detect ignored speech
+    localStream, // mic stream — lets the recognizer detect ignored speech
+    updateMicMeter
   );
 }
 

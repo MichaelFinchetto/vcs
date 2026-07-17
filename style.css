@@ -302,6 +302,37 @@ body {
   .video-tile .volume-ctrl { opacity: 1; }
 }
 
+.video-tile .mic-meter {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  padding: 5px 10px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+}
+.mic-meter-bar {
+  width: 70px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+.mic-meter-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: #8a8f98;
+  transition: width 0.15s linear, background 0.15s;
+}
+.mic-meter-fill.speaking {
+  background: #3ecf6a;
+}
+
 /* ============ Panels ============ */
 .panels {
   width: 360px;

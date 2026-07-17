@@ -28,9 +28,10 @@ const SpeechService = (() => {
   let vadTimer = null;
   let voiceRunStart = 0; // when the current run of continuous speech began
   let lastVoice = 0; // last time the mic heard speech-level energy
-  const VAD_RMS_THRESHOLD = 0.04;
+  let noiseFloor = 0.01; // rolling estimate of ambient/quiet-room level
+  let onLevel = null; // optional UI callback: (rms, speaking, threshold)
   const STALL_AFTER_SPEECH_MS = 6000; // speech w/o recognition events = stall
-  const BACKSTOP_MS = 90000; // absolute ceiling, e.g. if VAD itself is broken
+  const BACKSTOP_MS = 30000; // absolute ceiling, e.g. if speech is too quiet for VAD
 
   function isSupported() {
     return "webkitSpeechRecognition" in window || "SpeechRecognition" in window;
@@ -56,12 +57,23 @@ const SpeechService = (() => {
         }
         const rms = Math.sqrt(sum / buf.length);
         const now = Date.now();
-        if (rms > VAD_RMS_THRESHOLD) {
+
+        // Adaptive threshold: speech = clearly above the room's noise floor.
+        // A fixed threshold misses quiet speakers / low mic gain entirely.
+        const threshold = Math.min(Math.max(noiseFloor * 3, 0.015), 0.06);
+        const speaking = rms > threshold;
+        if (!speaking) {
+          // Learn the noise floor only from non-speech; drift slowly.
+          noiseFloor = noiseFloor * 0.95 + rms * 0.05;
+        }
+
+        if (speaking) {
           if (!voiceRunStart) voiceRunStart = now;
           lastVoice = now;
         } else if (now - lastVoice > 1000) {
           voiceRunStart = 0; // speech run ended
         }
+        if (onLevel) onLevel(rms, speaking, threshold);
       }, 250);
     } catch (e) {
       console.warn("VAD unavailable — watchdog falls back to timers:", e);
@@ -169,13 +181,15 @@ const SpeechService = (() => {
    * @param {function} interimCb called with live in-progress text ("" to clear)
    * @param {function} errorCb   called with an error code when recognition fails
    * @param {MediaStream} [micStream] mic stream for voice-activity detection
+   * @param {function} [levelCb]  called ~4x/sec with (rms, speaking, threshold)
    */
-  function start(langCode, finalCb, interimCb, errorCb, micStream) {
+  function start(langCode, finalCb, interimCb, errorCb, micStream, levelCb) {
     if (!isSupported()) return false;
     stop();
     onFinal = finalCb;
     onInterim = interimCb;
     onError = errorCb;
+    onLevel = levelCb || null;
     recentRestarts = [];
     recognition = build(langCode);
     wantRunning = true;
