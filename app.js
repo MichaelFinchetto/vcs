@@ -12,7 +12,7 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.17.1"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.18.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
@@ -709,6 +709,21 @@ $("sttBtn").addEventListener("click", () => {
     SpeechService.stop();
     interimBar.classList.add("hidden");
   }
+});
+
+$("sttFlushBtn").addEventListener("click", () => {
+  if (!sttEnabled) {
+    toast("🗣️ is off — turn it on first · Спочатку увімкніть 🗣️");
+    return;
+  }
+  const btn = $("sttFlushBtn");
+  btn.classList.add("spinning");
+  setTimeout(() => btn.classList.remove("spinning"), 600);
+  // restart() reuses the live session; if recognition never started
+  // (or was fully stopped), fall back to a full start.
+  if (!SpeechService.restart()) startSpeechRecognition();
+  interimBar.classList.add("hidden");
+  toast("Voice recognition restarted · Розпізнавання перезапущено");
 });
 
 $("leaveBtn").addEventListener("click", () => {

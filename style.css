@@ -211,6 +211,8 @@ input[type="color"].theme-wheel::-webkit-color-swatch {
 .icon-btn:hover { border-color: var(--accent); }
 .icon-btn.off { opacity: 0.4; background: var(--bg); }
 .icon-btn.danger { background: rgba(255, 95, 86, 0.15); border-color: var(--danger); }
+.icon-btn.spinning { animation: spin 0.6s ease; }
+@keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
 
 /* ============ Layout ============ */
 .layout {

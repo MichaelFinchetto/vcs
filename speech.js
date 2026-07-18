@@ -12,6 +12,7 @@ const SpeechService = (() => {
   let recognition = null;
   let running = false;
   let wantRunning = false;
+  let currentLang = "en"; // remembered so hard restarts can rebuild
   let onFinal = null;
   let onInterim = null;
   let onError = null;
@@ -196,6 +197,45 @@ const SpeechService = (() => {
     }
   }
 
+  // Hard restart: throw the recognizer away and build a fresh one.
+  // abort() on a zombied session doesn't reliably fire onend, and even when
+  // it does, restarting the *same* object can carry the bad state along —
+  // so we never trust the old instance to come back to life.
+  function hardRestart(reason) {
+    if (!wantRunning || !recognition) return false;
+    console.warn("Speech recognition hard restart:", reason);
+    // Promote in-progress words to a final result so nothing is lost.
+    if (pendingInterim && onFinal) onFinal(pendingInterim);
+    pendingInterim = "";
+    if (onInterim) onInterim("");
+    // Detach handlers first so the dying session's onend can't double-start.
+    recognition.onresult = null;
+    recognition.onend = null;
+    recognition.onerror = null;
+    recognition.onaudiostart = null;
+    try {
+      recognition.abort();
+    } catch {
+      /* ignore */
+    }
+    running = false;
+    clearTimeout(restartTimer);
+    recognition = build(currentLang);
+    lastActivity = Date.now();
+    voiceRunStart = 0;
+    safeStart();
+    return true;
+  }
+
+  // Manual flush (the 🔄 button): also clears a crash-loop pause so the
+  // user can force a retry instead of waiting out the cooldown.
+  function restart() {
+    if (!recognition) return false;
+    recentRestarts = [];
+    wantRunning = true;
+    return hardRestart("manual flush");
+  }
+
   /**
    * Start continuous recognition.
    * @param {string} langCode  "en" | "uk"
@@ -208,6 +248,7 @@ const SpeechService = (() => {
   function start(langCode, finalCb, interimCb, errorCb, micStream, levelCb) {
     if (!isSupported()) return false;
     stop();
+    currentLang = langCode;
     onFinal = finalCb;
     onInterim = interimCb;
     onError = errorCb;
@@ -240,17 +281,9 @@ const SpeechService = (() => {
       const backstop = sinceActivity > BACKSTOP_MS;
 
       if (speechIgnored || timerFallback || backstop) {
-        console.warn(
-          "Speech recognition looks stalled — forcing restart.",
-          speechIgnored ? "(mic active, recognizer silent)" : "(timer)"
+        hardRestart(
+          speechIgnored ? "mic active, recognizer silent" : "inactivity timer"
         );
-        lastActivity = now; // don't re-abort before the restart lands
-        voiceRunStart = 0;
-        try {
-          recognition.abort();
-        } catch {
-          /* ignore */
-        }
       }
     }, 1000);
     return true;
@@ -272,5 +305,5 @@ const SpeechService = (() => {
     running = false;
   }
 
-  return { isSupported, start, stop };
+  return { isSupported, start, stop, restart };
 })();
