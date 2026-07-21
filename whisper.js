@@ -26,6 +26,7 @@ const WhisperService = (() => {
   let onFinal = null;
   let onError = null;
   let onLevel = null;
+  let gate = null; // optional async check: transcribe this utterance at all?
 
   let recorder = null;
   let recStart = 0;
@@ -79,10 +80,23 @@ const WhisperService = (() => {
     };
     rec.onstop = () => {
       const spoke = hadSpeech;
+      // Capture before startRecorder() resets the VAD bookkeeping.
+      const utter = { start: speechStart, end: lastVoice };
       const blob = new Blob(localChunks, { type: rec.mimeType });
       // Chain the next recording immediately so no speech falls in a gap.
       startRecorder();
-      if (spoke && blob.size >= MIN_BLOB_BYTES) transcribe(blob);
+      if (!spoke || blob.size < MIN_BLOB_BYTES) return;
+      if (gate) {
+        // Safety-net mode: ask the app (async — it may wait for the primary
+        // engine's results to settle) whether this utterance needs us.
+        Promise.resolve(gate(utter))
+          .then((needed) => {
+            if (needed && running) transcribe(blob);
+          })
+          .catch(() => {});
+      } else {
+        transcribe(blob);
+      }
     };
     rec.start();
     recorder = rec;
@@ -173,8 +187,10 @@ const WhisperService = (() => {
    * @param {function} errorCb  called with an error code on failure
    * @param {MediaStream} micStream  the local mic stream
    * @param {function} [levelCb]  called ~4x/sec with (rms, speaking, threshold)
+   * @param {function} [gateCb]  safety-net mode: called with {start, end} of
+   *   each utterance; resolve true to transcribe it, false to discard
    */
-  function start(langCode, finalCb, errorCb, micStream, levelCb) {
+  function start(langCode, finalCb, errorCb, micStream, levelCb, gateCb) {
     stop();
     if (!isSupported()) return false;
     if (!micStream || !micStream.getAudioTracks().length) return false;
@@ -182,6 +198,7 @@ const WhisperService = (() => {
     onFinal = finalCb;
     onError = errorCb;
     onLevel = levelCb || null;
+    gate = gateCb || null;
     stream = new MediaStream(micStream.getAudioTracks());
     running = true;
     errorStreak = 0;
@@ -217,6 +234,7 @@ const WhisperService = (() => {
     }
     recorder = null;
     stream = null;
+    gate = null;
     noiseFloor = 0.01;
     speechStart = 0;
     lastVoice = 0;

@@ -22,6 +22,7 @@ const SpeechService = (() => {
   let degradedWarned = false; // only report engine-degraded once per start
   let watchdogTimer = null;
   let lastActivity = 0; // last time the recognizer showed signs of life
+  let lastResult = 0; // last time the recognizer produced actual text
   let pendingInterim = ""; // in-progress text, flushed if the session dies
 
   // Voice-activity detection: measures real mic energy so the watchdog can
@@ -139,6 +140,7 @@ const SpeechService = (() => {
       }
       pendingInterim = interim.trim();
       lastActivity = Date.now();
+      lastResult = lastActivity;
       if (onInterim) onInterim(pendingInterim);
     };
 
@@ -320,5 +322,11 @@ const SpeechService = (() => {
     running = false;
   }
 
-  return { isSupported, start, stop, restart };
+  // When the recognizer last produced text — lets the Whisper safety net
+  // decide whether Chrome actually heard a given utterance.
+  function lastResultAt() {
+    return lastResult;
+  }
+
+  return { isSupported, start, stop, restart, lastResultAt };
 })();

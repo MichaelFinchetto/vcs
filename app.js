@@ -12,7 +12,7 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.19.0"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.20.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
@@ -723,8 +723,8 @@ function updateEngineButton() {
   btn.textContent = sttEngine === "whisper" ? "Ⓦ" : "Ⓒ";
   btn.title =
     sttEngine === "whisper"
-      ? "Voice engine: Whisper (backup) — click for Chrome · Двигун: Whisper — натисніть для Chrome"
-      : "Voice engine: Chrome — click for Whisper (backup) · Двигун: Chrome — натисніть для Whisper";
+      ? "Voice engine: Whisper only — click for Chrome + Whisper safety net · Двигун: лише Whisper — натисніть для Chrome"
+      : "Voice engine: Chrome + Whisper safety net — click for Whisper only · Двигун: Chrome + Whisper — натисніть для Whisper";
 }
 
 function setSttEngine(engine, why) {
@@ -758,6 +758,7 @@ $("sttFlushBtn").addEventListener("click", () => {
   // (or was fully stopped), fall back to a full start.
   const restarted =
     sttEngine === "whisper" ? WhisperService.restart() : SpeechService.restart();
+  if (sttEngine === "chrome") WhisperService.restart(); // recycle the net too
   if (!restarted) startSpeechRecognition();
   interimBar.classList.add("hidden");
   toast("Voice recognition restarted · Розпізнавання перезапущено");
@@ -859,6 +860,33 @@ function startSpeechRecognition() {
     handleSttError,
     localStream, // mic stream — lets the recognizer detect ignored speech
     updateMicMeter
+  );
+
+  // Safety net: Whisper records in parallel but transcribes ONLY the
+  // utterances Chrome verifiably ignored — so a Chrome stall shows up as a
+  // slightly late line instead of missing words. The gate waits for
+  // Chrome's (often lagging) results to settle, then checks whether it
+  // produced any text since the utterance began. No duplicates: if Chrome
+  // heard anything at all, the clip is discarded unsent.
+  WhisperService.start(
+    myLang,
+    async (text) => {
+      console.info("Whisper gap-fill recovered:", text);
+      await handleFinalText(text);
+    },
+    (code) => {
+      // The net failing must never interrupt the call — Chrome is primary.
+      console.warn("Whisper safety net unavailable:", code);
+    },
+    localStream,
+    null, // mic meter is driven by SpeechService's VAD already
+    (utter) =>
+      new Promise((resolve) => {
+        const GRACE_MS = 2500; // Chrome finals can trail speech by ~1-2s
+        setTimeout(() => {
+          resolve(SpeechService.lastResultAt() < utter.start);
+        }, GRACE_MS);
+      })
   );
 }
 

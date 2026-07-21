@@ -46,7 +46,7 @@ To chat with someone remote, host the folder on a free static host (e.g. GitHub 
 - 🗣️ toggle speech recognition
 - Ⓒ/Ⓦ switch voice engine — Chrome's built-in recognition or the Whisper backup
 - � restart voice recognition (instant fix if transcription goes quiet)
-- �📞 leave the call
+- � leave the call
 - **—** / **▢** on each panel header minimises/maximises it
 
 ## Better translations with DeepL (recommended)
@@ -71,7 +71,7 @@ Each participant translates incoming messages locally, so each person can set th
 
 ## Whisper backup voice engine
 
-Chrome's built-in speech recognition streams to Google's servers and can silently stall for some users. The Ⓒ/Ⓦ button in the call switches to a backup engine that records utterances locally and transcribes them with **Workers AI Whisper** on the same Cloudflare Worker — free tier, works in any browser, handles Ukrainian well. The app also switches to it automatically if Chrome's recognition keeps stalling.
+Chrome's built-in speech recognition streams to Google's servers and can silently stall for some users. In the default Ⓒ mode, a **Whisper safety net** records the mic in parallel and transcribes (via **Workers AI Whisper** on the same Cloudflare Worker — free tier, handles Ukrainian well) *only* the sentences Chrome verifiably missed, so a stall shows up as a slightly late line instead of lost words. The Ⓦ mode skips Chrome entirely and uses Whisper for everything — works in any browser. The app switches to Ⓦ automatically if Chrome's recognition keeps stalling.
 
 It needs the worker redeployed once with the AI binding (already in `wrangler.toml`):
 
