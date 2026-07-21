@@ -9,6 +9,12 @@
  *               TURN Server → Create. Then set two more secrets:
  *                 npx wrangler secret put TURN_KEY_ID     (the Key ID)
  *                 npx wrangler secret put TURN_API_TOKEN  (the API token)
+ * POST /stt   — speech-to-text via Workers AI Whisper (free tier). Backup
+ *               engine for when Chrome's built-in recognition misbehaves.
+ *               Body: raw audio (webm/opus from MediaRecorder).
+ *               Query: ?lang=en|uk. Needs the [ai] binding in wrangler.toml
+ *               (redeploy with `npx wrangler deploy`); dashboard deploys must
+ *               add an AI binding named "AI" under Settings → Bindings.
  *
  * Setup (free, ~5 minutes). First get a DeepL API Free key:
  * https://www.deepl.com/pro-api (free plan, 500k chars/month).
@@ -48,6 +54,9 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === "/turn") {
       return handleTurn(env);
+    }
+    if (url.pathname === "/stt") {
+      return handleStt(request, env, url);
     }
 
     if (request.method !== "POST") {
@@ -133,6 +142,46 @@ async function handleTurn(env) {
     ? data.iceServers
     : [data.iceServers];
   return json(servers);
+}
+
+/**
+ * Transcribe an audio clip with Workers AI Whisper (large-v3-turbo).
+ * The browser records one utterance per request (VAD-segmented), so clips
+ * are short; 4MB cap is a safety net, not a normal case.
+ */
+async function handleStt(request, env, url) {
+  if (request.method !== "POST") {
+    return json({ error: "POST only" }, 405);
+  }
+  if (!env.AI) {
+    return json({ error: "Workers AI not configured" }, 503);
+  }
+
+  const lang = url.searchParams.get("lang") === "uk" ? "uk" : "en";
+  const buf = await request.arrayBuffer();
+  if (!buf.byteLength || buf.byteLength > 4 * 1024 * 1024) {
+    return json({ error: "Bad audio" }, 400);
+  }
+
+  try {
+    const result = await env.AI.run("@cf/openai/whisper-large-v3-turbo", {
+      audio: base64FromBuffer(buf),
+      language: lang,
+    });
+    return json({ text: (result.text || "").trim() });
+  } catch (e) {
+    return json({ error: `Whisper failed: ${e.message}` }, 502);
+  }
+}
+
+function base64FromBuffer(buf) {
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  const CHUNK = 0x8000; // String.fromCharCode arg limit safety
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
 }
 
 function json(obj, status = 200) {
