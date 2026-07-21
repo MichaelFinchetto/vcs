@@ -44,9 +44,7 @@ To chat with someone remote, host the folder on a free static host (e.g. GitHub 
 - 🎙️ mute/unmute microphone
 - 📷 camera on/off
 - 🗣️ toggle speech recognition
-- Ⓒ/Ⓦ switch voice engine — Chrome's built-in recognition or the Whisper backup
-- � restart voice recognition (instant fix if transcription goes quiet)
-- � leave the call
+- 📞 leave the call
 - **—** / **▢** on each panel header minimises/maximises it
 
 ## Better translations with DeepL (recommended)
@@ -68,21 +66,6 @@ The default keyless translator is weak with slang and informal speech. DeepL is 
 3. Paste the worker URL (`https://<name>.<account>.workers.dev`) into the **DeepL relay URL** field on the lobby screen. It's remembered between visits.
 
 Each participant translates incoming messages locally, so each person can set their own relay URL (or share one — the free quota is generous).
-
-## Whisper backup voice engine
-
-Chrome's built-in speech recognition streams to Google's servers and can silently stall for some users. In the default Ⓒ mode, a **Whisper safety net** records the mic in parallel and transcribes (via **Workers AI Whisper** on the same Cloudflare Worker — free tier, handles Ukrainian well) *only* the sentences Chrome verifiably missed, so a stall shows up as a slightly late line instead of lost words. The Ⓦ mode skips Chrome entirely and uses Whisper for everything — works in any browser. The app switches to Ⓦ automatically if Chrome's recognition keeps stalling.
-
-It needs the worker redeployed once with the AI binding (already in `wrangler.toml`):
-
-```powershell
-# from cloudflare-worker/
-npx wrangler deploy
-```
-
-Dashboard deploys: paste the updated `worker.js`, then add an **AI binding** named `AI` under **Settings → Bindings**.
-
-Trade-offs vs Chrome's engine: text arrives per-utterance (no live word-by-word preview) and a couple of seconds later. Reliability is far better when Chrome misbehaves.
 
 ## Fixing "stuck on Joining room" — TURN relay
 

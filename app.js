@@ -12,7 +12,7 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.20.0"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.21.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
@@ -24,7 +24,6 @@ const METERED_TURN_URL =
 const JOIN_TIMEOUT_MS = 20000;
 const THEME_KEY = "masha-theme";
 const VOLUME_KEY = "masha-volume"; // remembered slider position (1 = 100%)
-const STT_ENGINE_KEY = "masha-stt-engine"; // "chrome" | "whisper"
 
 // ---------- State ----------
 let peer = null;
@@ -34,7 +33,6 @@ let myLang = "en";
 let roomCode = "";
 let isHost = false;
 let sttEnabled = true;
-let sttEngine = localStorage.getItem(STT_ENGINE_KEY) === "whisper" ? "whisper" : "chrome";
 let rejoining = false;
 let rejoinAttempts = 0;
 let joinTimeout = null;
@@ -708,42 +706,9 @@ $("sttBtn").addEventListener("click", () => {
   if (sttEnabled) {
     startSpeechRecognition();
   } else {
-    stopAllSpeechEngines();
+    SpeechService.stop();
+    interimBar.classList.add("hidden");
   }
-});
-
-function stopAllSpeechEngines() {
-  SpeechService.stop();
-  WhisperService.stop();
-  interimBar.classList.add("hidden");
-}
-
-function updateEngineButton() {
-  const btn = $("sttEngineBtn");
-  btn.textContent = sttEngine === "whisper" ? "Ⓦ" : "Ⓒ";
-  btn.title =
-    sttEngine === "whisper"
-      ? "Voice engine: Whisper only — click for Chrome + Whisper safety net · Двигун: лише Whisper — натисніть для Chrome"
-      : "Voice engine: Chrome + Whisper safety net — click for Whisper only · Двигун: Chrome + Whisper — натисніть для Whisper";
-}
-
-function setSttEngine(engine, why) {
-  if (engine === sttEngine) return;
-  sttEngine = engine;
-  localStorage.setItem(STT_ENGINE_KEY, engine);
-  updateEngineButton();
-  const label = engine === "whisper" ? "Whisper (backup)" : "Chrome";
-  addSystemMessage(
-    `🔀 Voice engine → ${label}${why ? ` — ${why}` : ""} · Двигун розпізнавання → ${label}`
-  );
-  if (sttEnabled) {
-    stopAllSpeechEngines();
-    startSpeechRecognition();
-  }
-}
-
-$("sttEngineBtn").addEventListener("click", () => {
-  setSttEngine(sttEngine === "whisper" ? "chrome" : "whisper");
 });
 
 $("sttFlushBtn").addEventListener("click", () => {
@@ -756,10 +721,7 @@ $("sttFlushBtn").addEventListener("click", () => {
   setTimeout(() => btn.classList.remove("spinning"), 600);
   // restart() reuses the live session; if recognition never started
   // (or was fully stopped), fall back to a full start.
-  const restarted =
-    sttEngine === "whisper" ? WhisperService.restart() : SpeechService.restart();
-  if (sttEngine === "chrome") WhisperService.restart(); // recycle the net too
-  if (!restarted) startSpeechRecognition();
+  if (!SpeechService.restart()) startSpeechRecognition();
   interimBar.classList.add("hidden");
   toast("Voice recognition restarted · Розпізнавання перезапущено");
 });
@@ -769,7 +731,7 @@ $("leaveBtn").addEventListener("click", () => {
   broadcast({ type: "bye" });
   if (peer) peer.destroy();
   if (localStream) localStream.getTracks().forEach((t) => t.stop());
-  stopAllSpeechEngines();
+  SpeechService.stop();
   location.reload();
 });
 
@@ -805,50 +767,26 @@ $("chatForm").addEventListener("submit", async (e) => {
 // Voice transcript
 // ================================================================
 function startSpeechRecognition() {
-  updateEngineButton();
-
-  const handleFinalText = async (finalText) => {
-    broadcast({ type: "speech", name: myName, lang: myLang, text: finalText });
-    await renderMessage(voiceMessages, {
-      name: myName,
-      lang: myLang,
-      text: finalText,
-      mine: true,
-    });
-  };
-
-  if (sttEngine === "whisper") {
-    const ok = WhisperService.start(
-      myLang,
-      handleFinalText,
-      handleSttError,
-      localStream,
-      updateMicMeter
-    );
-    if (!ok) {
-      addSystemMessage(
-        "⚠️ Whisper engine couldn't start (no mic / recorder unsupported) — falling back to Chrome."
-      );
-      sttEngine = "chrome";
-      localStorage.setItem(STT_ENGINE_KEY, "chrome");
-      updateEngineButton();
-      startSpeechRecognition();
-    }
-    return;
-  }
-
   if (!SpeechService.isSupported()) {
     addSystemMessage(
-      "Speech recognition unsupported in this browser — switching to the Whisper engine. · " +
-        "Розпізнавання мови не підтримується — перемикаємось на Whisper."
+      "Speech recognition unsupported in this browser — use Chrome or Edge."
     );
-    setSttEngine("whisper");
+    $("sttBtn").classList.add("off");
+    sttEnabled = false;
     return;
   }
 
   SpeechService.start(
     myLang,
-    handleFinalText,
+    async (finalText) => {
+      broadcast({ type: "speech", name: myName, lang: myLang, text: finalText });
+      await renderMessage(voiceMessages, {
+        name: myName,
+        lang: myLang,
+        text: finalText,
+        mine: true,
+      });
+    },
     (interimText) => {
       if (interimText) {
         interimBar.textContent = `🎙️ ${interimText}…`;
@@ -857,90 +795,43 @@ function startSpeechRecognition() {
         interimBar.classList.add("hidden");
       }
     },
-    handleSttError,
+    (errorCode) => {
+      const explanations = {
+        network:
+          "⚠️ Speech recognition: network error — Chrome couldn't reach its speech service. Check your internet connection.",
+        "audio-capture":
+          "⚠️ Speech recognition: no usable microphone — is another app using it?",
+        "not-allowed":
+          "⚠️ Speech recognition: microphone permission denied. Re-enable it in the address bar and click 🗣️ to retry.",
+        "service-not-allowed":
+          "⚠️ Speech recognition: blocked by the browser. Are you on HTTPS or localhost?",
+        "restart-loop":
+          "⚠️ Speech recognition keeps failing — paused, retrying in 30 seconds…",
+        "language-not-supported":
+          "⚠️ Speech recognition: this language isn't supported by your browser.",
+        "quiet-mic":
+          "🎙️ Your voice is coming through very quietly — this can make transcription unreliable. " +
+          "Try raising your microphone input volume (Mac: System Settings → Sound → Input) or sitting closer. · " +
+          "Ваш голос звучить дуже тихо — це може погіршувати розпізнавання мови. " +
+          "Спробуйте збільшити гучність мікрофона (Mac: Системні налаштування → Звук → Вхід) або сісти ближче.",
+      };
+      addSystemMessage(
+        explanations[errorCode] || `⚠️ Speech recognition error: ${errorCode}`
+      );
+      if (errorCode === "not-allowed") {
+        $("sttBtn").classList.add("off");
+        sttEnabled = false;
+      }
+      if (errorCode === "restart-loop") {
+        // Auto-recover instead of requiring a manual toggle.
+        setTimeout(() => {
+          if (sttEnabled) startSpeechRecognition();
+        }, 30000);
+      }
+    },
     localStream, // mic stream — lets the recognizer detect ignored speech
     updateMicMeter
   );
-
-  // Safety net: Whisper records in parallel but transcribes ONLY the
-  // utterances Chrome verifiably ignored — so a Chrome stall shows up as a
-  // slightly late line instead of missing words. The gate waits for
-  // Chrome's (often lagging) results to settle, then checks whether it
-  // produced any text since the utterance began. No duplicates: if Chrome
-  // heard anything at all, the clip is discarded unsent.
-  WhisperService.start(
-    myLang,
-    async (text) => {
-      console.info("Whisper gap-fill recovered:", text);
-      await handleFinalText(text);
-    },
-    (code) => {
-      // The net failing must never interrupt the call — Chrome is primary.
-      console.warn("Whisper safety net unavailable:", code);
-    },
-    localStream,
-    null, // mic meter is driven by SpeechService's VAD already
-    (utter) =>
-      new Promise((resolve) => {
-        const GRACE_MS = 2500; // Chrome finals can trail speech by ~1-2s
-        setTimeout(() => {
-          resolve(SpeechService.lastResultAt() < utter.start);
-        }, GRACE_MS);
-      })
-  );
-}
-
-function handleSttError(errorCode) {
-  const explanations = {
-    network:
-      "⚠️ Speech recognition: network error — Chrome couldn't reach its speech service. Check your internet connection.",
-    "audio-capture":
-      "⚠️ Speech recognition: no usable microphone — is another app using it?",
-    "not-allowed":
-      "⚠️ Speech recognition: microphone permission denied. Re-enable it in the address bar and click 🗣️ to retry.",
-    "service-not-allowed":
-      "⚠️ Speech recognition: blocked by the browser. Are you on HTTPS or localhost?",
-    "restart-loop":
-      "⚠️ Speech recognition keeps failing — paused, retrying in 30 seconds…",
-    "language-not-supported":
-      "⚠️ Speech recognition: this language isn't supported by your browser.",
-    "quiet-mic":
-      "🎙️ Your voice is coming through very quietly — this can make transcription unreliable. " +
-      "Try raising your microphone input volume (Mac: System Settings → Sound → Input) or sitting closer. · " +
-      "Ваш голос звучить дуже тихо — це може погіршувати розпізнавання мови. " +
-      "Спробуйте збільшити гучність мікрофона (Mac: Системні налаштування → Звук → Вхід) або сісти ближче.",
-    "whisper-failed":
-      "⚠️ Whisper transcription keeps failing — is the worker deployed with the AI binding? " +
-      "Click Ⓦ to switch back to Chrome. · Whisper не працює — натисніть Ⓦ, щоб повернутися до Chrome.",
-    "recorder-failed":
-      "⚠️ Whisper engine: couldn't record the microphone in this browser.",
-  };
-
-  // Chrome's recognizer keeps stalling even across fresh sessions —
-  // its speech service is unwell. Switch to the Whisper backup.
-  if (errorCode === "engine-degraded") {
-    if (sttEngine === "chrome") {
-      setSttEngine(
-        "whisper",
-        "Chrome's recognition keeps stalling · Chrome постійно зависає"
-      );
-    }
-    return;
-  }
-
-  addSystemMessage(
-    explanations[errorCode] || `⚠️ Speech recognition error: ${errorCode}`
-  );
-  if (errorCode === "not-allowed") {
-    $("sttBtn").classList.add("off");
-    sttEnabled = false;
-  }
-  if (errorCode === "restart-loop") {
-    // Auto-recover instead of requiring a manual toggle.
-    setTimeout(() => {
-      if (sttEnabled) startSpeechRecognition();
-    }, 30000);
-  }
 }
 
 // ================================================================
