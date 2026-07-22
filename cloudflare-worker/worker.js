@@ -231,12 +231,24 @@ async function handleDeepgram(request, env, url) {
   const server = pair[1];
   server.accept();
 
+  // The runtime delivers the browser's binary frames as Blobs, but
+  // dgWs.send(Blob) stringifies them to "[object Blob]" — Deepgram would
+  // receive no audio at all. Convert to ArrayBuffer, and chain the sends so
+  // async conversion can never reorder audio frames.
+  let sendChain = Promise.resolve();
   server.addEventListener("message", (e) => {
-    try {
-      dgWs.send(e.data);
-    } catch {
-      /* Deepgram side already closed */
-    }
+    const data = e.data;
+    sendChain = sendChain.then(async () => {
+      try {
+        const payload =
+          typeof data !== "string" && typeof data.arrayBuffer === "function"
+            ? await data.arrayBuffer()
+            : data;
+        dgWs.send(payload);
+      } catch (err) {
+        console.log("relay send failed:", err.message);
+      }
+    });
   });
   dgWs.addEventListener("message", (e) => {
     try {

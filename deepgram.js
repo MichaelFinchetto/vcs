@@ -140,6 +140,10 @@ const DeepgramService = (() => {
     } catch {
       return;
     }
+    if (data.type === "Error") {
+      console.warn("Deepgram error message:", data);
+      return;
+    }
     if (data.type !== "Results") return;
     const alt = data.channel && data.channel.alternatives && data.channel.alternatives[0];
     const text = ((alt && alt.transcript) || "").trim();
