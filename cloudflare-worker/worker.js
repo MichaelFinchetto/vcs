@@ -208,7 +208,8 @@ async function handleDeepgram(request, env, url) {
     channels: "1",
     interim_results: "true",
     smart_format: "true",
-    endpointing: "500",
+    endpointing: "300",
+    utterance_end_ms: "1000",
   });
 
   const dgResp = await fetch(

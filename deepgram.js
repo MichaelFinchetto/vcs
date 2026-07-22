@@ -43,7 +43,20 @@ const DeepgramService = (() => {
   let preBufferedMs = 0;
   let finals = []; // is_final segments accumulating until speech_final
   let keepAliveTimer = null;
+  let flushTimer = null; // local deadline so finals never sit in limbo
+  let gateOpen = false; // whether we're currently streaming audio
   let failStreak = 0;
+
+  // Post whatever finalised text we're holding as a completed utterance.
+  function flushFinals() {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+    if (!finals.length) return;
+    const utterance = finals.join(" ");
+    finals = [];
+    if (onInterim) onInterim("");
+    if (onFinal) onFinal(utterance);
+  }
 
   function isSupported() {
     return (
@@ -89,6 +102,21 @@ const DeepgramService = (() => {
 
       const chunk = floatTo16(input).buffer;
       const active = speaking || now - lastVoice < HANGOVER_MS;
+
+      // Gate just closed: the mic has been quiet for the whole hangover, so
+      // no more audio is coming. Deepgram can't hear that silence (we've
+      // stopped sending) — tell it to finalise now instead of waiting, and
+      // set a local deadline in case the response goes missing.
+      if (gateOpen && !active) {
+        gateOpen = false;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "Finalize" }));
+        }
+        clearTimeout(flushTimer);
+        flushTimer = setTimeout(flushFinals, 1200);
+      } else if (!gateOpen && active) {
+        gateOpen = true;
+      }
 
       if (active && ws && ws.readyState === WebSocket.OPEN) {
         // Flush the pre-buffer first so the utterance's opening syllable
@@ -144,17 +172,19 @@ const DeepgramService = (() => {
       console.warn("Deepgram error message:", data);
       return;
     }
+    if (data.type === "UtteranceEnd") {
+      flushFinals();
+      return;
+    }
     if (data.type !== "Results") return;
     const alt = data.channel && data.channel.alternatives && data.channel.alternatives[0];
     const text = ((alt && alt.transcript) || "").trim();
 
     if (data.is_final) {
       if (text) finals.push(text);
-      if (data.speech_final && finals.length) {
-        const utterance = finals.join(" ");
-        finals = [];
-        if (onInterim) onInterim("");
-        if (onFinal) onFinal(utterance);
+      // from_finalize marks the response to our gate-close Finalize nudge.
+      if (data.speech_final || data.from_finalize) {
+        flushFinals();
       } else if (onInterim) {
         onInterim(finals.join(" "));
       }
@@ -183,8 +213,7 @@ const DeepgramService = (() => {
       running = false;
       clearInterval(keepAliveTimer);
       // Whatever was mid-sentence is finalised so words aren't lost.
-      if (finals.length && onFinal) onFinal(finals.join(" "));
-      finals = [];
+      flushFinals();
       if (onInterim) onInterim("");
       if (!wantRunning) return;
       if (manualRestart) {
@@ -262,6 +291,9 @@ const DeepgramService = (() => {
     wantRunning = false;
     manualRestart = false;
     clearInterval(keepAliveTimer);
+    clearTimeout(flushTimer);
+    flushTimer = null;
+    gateOpen = false;
     stopAudio();
     if (ws) {
       try {
