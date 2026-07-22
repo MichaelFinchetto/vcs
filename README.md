@@ -44,6 +44,8 @@ To chat with someone remote, host the folder on a free static host (e.g. GitHub 
 - 🎙️ mute/unmute microphone
 - 📷 camera on/off
 - 🗣️ toggle speech recognition
+- Ⓓ/Ⓒ switch voice engine — Deepgram (primary) or Chrome's built-in (fallback)
+- 🔄 restart voice recognition (instant fix if transcription goes quiet)
 - 📞 leave the call
 - **—** / **▢** on each panel header minimises/maximises it
 
@@ -66,6 +68,24 @@ The default keyless translator is weak with slang and informal speech. DeepL is 
 3. Paste the worker URL (`https://<name>.<account>.workers.dev`) into the **DeepL relay URL** field on the lobby screen. It's remembered between visits.
 
 Each participant translates incoming messages locally, so each person can set their own relay URL (or share one — the free quota is generous).
+
+## Deepgram voice recognition (primary engine)
+
+Chrome's built-in speech recognition can silently stall for some users, so the app's primary engine is **Deepgram** — streaming word-by-word transcription with strong Ukrainian support. Signup gives $200 of free credit (no card), and a voice-activity gate only streams audio while someone is actually speaking, so silence costs nothing; that's roughly 560 hours of *speech*.
+
+Setup:
+
+1. Sign up at https://deepgram.com and create an API key.
+2. Store it as a worker secret and redeploy (from `cloudflare-worker/`):
+
+   ```powershell
+   npx wrangler secret put DEEPGRAM_API_KEY   # paste the key when prompted
+   npx wrangler deploy
+   ```
+
+The browser never sees the key — audio is relayed through the worker's `/dg` WebSocket endpoint, which adds the auth header en route.
+
+If Deepgram is unreachable (or the credit ever runs out), the app automatically falls back to Chrome's engine for that session and tries Deepgram again next visit. The Ⓓ/Ⓒ button switches manually.
 
 ## Fixing "stuck on Joining room" — TURN relay
 

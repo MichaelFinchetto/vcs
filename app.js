@@ -12,7 +12,7 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.21.0"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.22.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
@@ -24,6 +24,7 @@ const METERED_TURN_URL =
 const JOIN_TIMEOUT_MS = 20000;
 const THEME_KEY = "masha-theme";
 const VOLUME_KEY = "masha-volume"; // remembered slider position (1 = 100%)
+const STT_ENGINE_KEY = "masha-stt-engine"; // "deepgram" | "chrome"
 
 // ---------- State ----------
 let peer = null;
@@ -33,6 +34,8 @@ let myLang = "en";
 let roomCode = "";
 let isHost = false;
 let sttEnabled = true;
+// Deepgram is the primary engine; Chrome's built-in STT is the free fallback.
+let sttEngine = localStorage.getItem(STT_ENGINE_KEY) === "chrome" ? "chrome" : "deepgram";
 let rejoining = false;
 let rejoinAttempts = 0;
 let joinTimeout = null;
@@ -706,9 +709,42 @@ $("sttBtn").addEventListener("click", () => {
   if (sttEnabled) {
     startSpeechRecognition();
   } else {
-    SpeechService.stop();
-    interimBar.classList.add("hidden");
+    stopAllSpeechEngines();
   }
+});
+
+function stopAllSpeechEngines() {
+  SpeechService.stop();
+  DeepgramService.stop();
+  interimBar.classList.add("hidden");
+}
+
+function updateEngineButton() {
+  const btn = $("sttEngineBtn");
+  btn.textContent = sttEngine === "deepgram" ? "Ⓓ" : "Ⓒ";
+  btn.title =
+    sttEngine === "deepgram"
+      ? "Voice engine: Deepgram — click for Chrome · Двигун: Deepgram — натисніть для Chrome"
+      : "Voice engine: Chrome (fallback) — click for Deepgram · Двигун: Chrome — натисніть для Deepgram";
+}
+
+function setSttEngine(engine, { persist = true, why = "" } = {}) {
+  if (engine === sttEngine) return;
+  sttEngine = engine;
+  if (persist) localStorage.setItem(STT_ENGINE_KEY, engine);
+  updateEngineButton();
+  const label = engine === "deepgram" ? "Deepgram" : "Chrome";
+  addSystemMessage(
+    `🔀 Voice engine → ${label}${why ? ` — ${why}` : ""} · Двигун розпізнавання → ${label}`
+  );
+  if (sttEnabled) {
+    stopAllSpeechEngines();
+    startSpeechRecognition();
+  }
+}
+
+$("sttEngineBtn").addEventListener("click", () => {
+  setSttEngine(sttEngine === "deepgram" ? "chrome" : "deepgram");
 });
 
 $("sttFlushBtn").addEventListener("click", () => {
@@ -721,7 +757,9 @@ $("sttFlushBtn").addEventListener("click", () => {
   setTimeout(() => btn.classList.remove("spinning"), 600);
   // restart() reuses the live session; if recognition never started
   // (or was fully stopped), fall back to a full start.
-  if (!SpeechService.restart()) startSpeechRecognition();
+  const restarted =
+    sttEngine === "deepgram" ? DeepgramService.restart() : SpeechService.restart();
+  if (!restarted) startSpeechRecognition();
   interimBar.classList.add("hidden");
   toast("Voice recognition restarted · Розпізнавання перезапущено");
 });
@@ -731,7 +769,7 @@ $("leaveBtn").addEventListener("click", () => {
   broadcast({ type: "bye" });
   if (peer) peer.destroy();
   if (localStream) localStream.getTracks().forEach((t) => t.stop());
-  SpeechService.stop();
+  stopAllSpeechEngines();
   location.reload();
 });
 
@@ -767,6 +805,40 @@ $("chatForm").addEventListener("submit", async (e) => {
 // Voice transcript
 // ================================================================
 function startSpeechRecognition() {
+  updateEngineButton();
+
+  const handleFinalText = async (finalText) => {
+    broadcast({ type: "speech", name: myName, lang: myLang, text: finalText });
+    await renderMessage(voiceMessages, {
+      name: myName,
+      lang: myLang,
+      text: finalText,
+      mine: true,
+    });
+  };
+
+  const handleInterimText = (interimText) => {
+    if (interimText) {
+      interimBar.textContent = `🎙️ ${interimText}…`;
+      interimBar.classList.remove("hidden");
+    } else {
+      interimBar.classList.add("hidden");
+    }
+  };
+
+  if (sttEngine === "deepgram") {
+    const ok = DeepgramService.start(
+      myLang,
+      handleFinalText,
+      handleInterimText,
+      handleSttError,
+      localStream,
+      updateMicMeter
+    );
+    if (!ok) handleSttError("deepgram-failed");
+    return;
+  }
+
   if (!SpeechService.isSupported()) {
     addSystemMessage(
       "Speech recognition unsupported in this browser — use Chrome or Edge."
@@ -778,60 +850,71 @@ function startSpeechRecognition() {
 
   SpeechService.start(
     myLang,
-    async (finalText) => {
-      broadcast({ type: "speech", name: myName, lang: myLang, text: finalText });
-      await renderMessage(voiceMessages, {
-        name: myName,
-        lang: myLang,
-        text: finalText,
-        mine: true,
-      });
-    },
-    (interimText) => {
-      if (interimText) {
-        interimBar.textContent = `🎙️ ${interimText}…`;
-        interimBar.classList.remove("hidden");
-      } else {
-        interimBar.classList.add("hidden");
-      }
-    },
-    (errorCode) => {
-      const explanations = {
-        network:
-          "⚠️ Speech recognition: network error — Chrome couldn't reach its speech service. Check your internet connection.",
-        "audio-capture":
-          "⚠️ Speech recognition: no usable microphone — is another app using it?",
-        "not-allowed":
-          "⚠️ Speech recognition: microphone permission denied. Re-enable it in the address bar and click 🗣️ to retry.",
-        "service-not-allowed":
-          "⚠️ Speech recognition: blocked by the browser. Are you on HTTPS or localhost?",
-        "restart-loop":
-          "⚠️ Speech recognition keeps failing — paused, retrying in 30 seconds…",
-        "language-not-supported":
-          "⚠️ Speech recognition: this language isn't supported by your browser.",
-        "quiet-mic":
-          "🎙️ Your voice is coming through very quietly — this can make transcription unreliable. " +
-          "Try raising your microphone input volume (Mac: System Settings → Sound → Input) or sitting closer. · " +
-          "Ваш голос звучить дуже тихо — це може погіршувати розпізнавання мови. " +
-          "Спробуйте збільшити гучність мікрофона (Mac: Системні налаштування → Звук → Вхід) або сісти ближче.",
-      };
-      addSystemMessage(
-        explanations[errorCode] || `⚠️ Speech recognition error: ${errorCode}`
-      );
-      if (errorCode === "not-allowed") {
-        $("sttBtn").classList.add("off");
-        sttEnabled = false;
-      }
-      if (errorCode === "restart-loop") {
-        // Auto-recover instead of requiring a manual toggle.
-        setTimeout(() => {
-          if (sttEnabled) startSpeechRecognition();
-        }, 30000);
-      }
-    },
+    handleFinalText,
+    handleInterimText,
+    handleSttError,
     localStream, // mic stream — lets the recognizer detect ignored speech
     updateMicMeter
   );
+}
+
+function handleSttError(errorCode) {
+  // Deepgram down (worker missing the secret, credit exhausted, or their
+  // outage): drop to Chrome for this session only, so Deepgram is tried
+  // again next visit once the underlying problem is fixed.
+  if (errorCode === "deepgram-failed") {
+    if (sttEngine === "deepgram") {
+      setSttEngine("chrome", {
+        persist: false,
+        why: "Deepgram unreachable, using Chrome this session · Deepgram недоступний",
+      });
+    }
+    return;
+  }
+
+  // Chrome's engine is stalling repeatedly — Deepgram is the better home.
+  if (errorCode === "engine-degraded") {
+    if (sttEngine === "chrome") {
+      setSttEngine("deepgram", {
+        persist: false,
+        why: "Chrome keeps stalling · Chrome постійно зависає",
+      });
+    }
+    return;
+  }
+
+  const explanations = {
+    network:
+      "⚠️ Speech recognition: network error — Chrome couldn't reach its speech service. Check your internet connection.",
+    "audio-capture":
+      "⚠️ Speech recognition: no usable microphone — is another app using it?",
+    "not-allowed":
+      "⚠️ Speech recognition: microphone permission denied. Re-enable it in the address bar and click 🗣️ to retry.",
+    "service-not-allowed":
+      "⚠️ Speech recognition: blocked by the browser. Are you on HTTPS or localhost?",
+    "restart-loop":
+      "⚠️ Speech recognition keeps failing — paused, retrying in 30 seconds…",
+    "language-not-supported":
+      "⚠️ Speech recognition: this language isn't supported by your browser.",
+    "quiet-mic":
+      "🎙️ Your voice is coming through very quietly — this can make transcription unreliable. " +
+      "Try raising your microphone input volume (Mac: System Settings → Sound → Input) or sitting closer. · " +
+      "Ваш голос звучить дуже тихо — це може погіршувати розпізнавання мови. " +
+      "Спробуйте збільшити гучність мікрофона (Mac: Системні налаштування → Звук → Вхід) або сісти ближче.",
+  };
+  addSystemMessage(
+    explanations[errorCode] || `⚠️ Speech recognition error: ${errorCode}`
+  );
+  if (errorCode === "not-allowed") {
+    $("sttBtn").classList.add("off");
+    sttEnabled = false;
+  }
+  if (errorCode === "restart-loop") {
+    // Auto-recover instead of requiring a manual toggle.
+    setTimeout(() => {
+      if (sttEnabled) startSpeechRecognition();
+    }, 30000);
+  }
 }
 
 // ================================================================

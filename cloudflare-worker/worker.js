@@ -15,6 +15,10 @@
  *               Query: ?lang=en|uk. Needs the [ai] binding in wrangler.toml
  *               (redeploy with `npx wrangler deploy`); dashboard deploys must
  *               add an AI binding named "AI" under Settings → Bindings.
+ * WS   /dg    — relays a browser WebSocket to Deepgram's live-transcription
+ *               API, adding the Authorization header en route so the API key
+ *               never reaches the browser. Query: ?lang=en|uk&rate=16000.
+ *               Requires a secret: npx wrangler secret put DEEPGRAM_API_KEY
  *
  * Setup (free, ~5 minutes). First get a DeepL API Free key:
  * https://www.deepl.com/pro-api (free plan, 500k chars/month).
@@ -57,6 +61,9 @@ export default {
     }
     if (url.pathname === "/stt") {
       return handleStt(request, env, url);
+    }
+    if (url.pathname === "/dg") {
+      return handleDeepgram(request, env, url);
     }
 
     if (request.method !== "POST") {
@@ -172,6 +179,95 @@ async function handleStt(request, env, url) {
   } catch (e) {
     return json({ error: `Whisper failed: ${e.message}` }, 502);
   }
+}
+
+/**
+ * Bidirectional WebSocket relay: browser <-> this worker <-> Deepgram.
+ * The browser streams raw linear16 PCM; Deepgram streams back JSON results.
+ * We only add auth and pin the transcription parameters — audio and results
+ * pass through untouched.
+ */
+async function handleDeepgram(request, env, url) {
+  if (!env.DEEPGRAM_API_KEY) {
+    return json({ error: "Deepgram not configured" }, 503);
+  }
+  if (request.headers.get("Upgrade") !== "websocket") {
+    return json({ error: "Expected WebSocket" }, 426);
+  }
+
+  const lang = url.searchParams.get("lang") === "uk" ? "uk" : "en";
+  const rate = Math.min(
+    Math.max(parseInt(url.searchParams.get("rate"), 10) || 16000, 8000),
+    48000
+  );
+  const dgParams = new URLSearchParams({
+    model: "nova-2",
+    language: lang,
+    encoding: "linear16",
+    sample_rate: String(rate),
+    channels: "1",
+    interim_results: "true",
+    smart_format: "true",
+    endpointing: "500",
+  });
+
+  const dgResp = await fetch(
+    `https://api.deepgram.com/v1/listen?${dgParams}`,
+    {
+      headers: {
+        Upgrade: "websocket",
+        Authorization: `Token ${env.DEEPGRAM_API_KEY}`,
+      },
+    }
+  );
+  const dgWs = dgResp.webSocket;
+  if (!dgWs) {
+    return json({ error: `Deepgram refused (${dgResp.status})` }, 502);
+  }
+  dgWs.accept();
+
+  const pair = new WebSocketPair();
+  const client = pair[0];
+  const server = pair[1];
+  server.accept();
+
+  server.addEventListener("message", (e) => {
+    try {
+      dgWs.send(e.data);
+    } catch {
+      /* Deepgram side already closed */
+    }
+  });
+  dgWs.addEventListener("message", (e) => {
+    try {
+      server.send(e.data);
+    } catch {
+      /* browser side already closed */
+    }
+  });
+  server.addEventListener("close", () => {
+    try {
+      dgWs.close();
+    } catch {
+      /* already closed */
+    }
+  });
+  dgWs.addEventListener("close", (e) => {
+    try {
+      server.close(1000, (e.reason || "deepgram closed").slice(0, 120));
+    } catch {
+      /* already closed */
+    }
+  });
+  dgWs.addEventListener("error", () => {
+    try {
+      server.close(1011, "deepgram error");
+    } catch {
+      /* already closed */
+    }
+  });
+
+  return new Response(null, { status: 101, webSocket: client });
 }
 
 function base64FromBuffer(buf) {

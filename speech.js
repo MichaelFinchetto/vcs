@@ -18,6 +18,8 @@ const SpeechService = (() => {
   let onError = null;
   let restartTimer = null;
   let recentRestarts = []; // timestamps, to detect crash loops
+  let stallRestarts = []; // watchdog-forced restarts, to detect a sick engine
+  let degradedWarned = false; // only report engine-degraded once per start
   let watchdogTimer = null;
   let lastActivity = 0; // last time the recognizer showed signs of life
   let pendingInterim = ""; // in-progress text, flushed if the session dies
@@ -204,6 +206,17 @@ const SpeechService = (() => {
   function hardRestart(reason) {
     if (!wantRunning || !recognition) return false;
     console.warn("Speech recognition hard restart:", reason);
+    // Repeated watchdog restarts mean the engine itself is unwell — fresh
+    // sessions keep stalling too. Tell the app so it can switch engines.
+    if (reason !== "manual flush") {
+      const now = Date.now();
+      stallRestarts = stallRestarts.filter((t) => now - t < 120000);
+      stallRestarts.push(now);
+      if (stallRestarts.length >= 3 && !degradedWarned) {
+        degradedWarned = true;
+        if (onError) onError("engine-degraded");
+      }
+    }
     // Promote in-progress words to a final result so nothing is lost.
     if (pendingInterim && onFinal) onFinal(pendingInterim);
     pendingInterim = "";
@@ -254,6 +267,8 @@ const SpeechService = (() => {
     onError = errorCb;
     onLevel = levelCb || null;
     recentRestarts = [];
+    stallRestarts = [];
+    degradedWarned = false;
     recognition = build(langCode);
     wantRunning = true;
     safeStart();
