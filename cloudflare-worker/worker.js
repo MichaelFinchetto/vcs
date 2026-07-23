@@ -201,15 +201,20 @@ async function handleDeepgram(request, env, url) {
     48000
   );
   const dgParams = new URLSearchParams({
-    model: "nova-2",
+    // nova-3 is more accurate for English; it doesn't cover Ukrainian yet.
+    model: lang === "en" ? "nova-3" : "nova-2",
     language: lang,
     encoding: "linear16",
     sample_rate: String(rate),
     channels: "1",
     interim_results: "true",
     smart_format: "true",
-    endpointing: "300",
-    utterance_end_ms: "1000",
+    // endpointing fires on audio silence — background noise (e.g. chopping
+    // vegetables) starves it and brief mid-sentence pauses false-trigger it,
+    // so keep it lazy and let utterance_end_ms (word-timing gaps, immune to
+    // noise) be the primary end-of-sentence signal.
+    endpointing: "800",
+    utterance_end_ms: "1200",
   });
 
   const dgResp = await fetch(

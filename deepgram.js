@@ -45,12 +45,14 @@ const DeepgramService = (() => {
   let keepAliveTimer = null;
   let flushTimer = null; // local deadline so finals never sit in limbo
   let gateOpen = false; // whether we're currently streaming audio
+  let flushedSinceClose = false; // already posted this gate closure's speech
   let failStreak = 0;
 
   // Post whatever finalised text we're holding as a completed utterance.
   function flushFinals() {
     clearTimeout(flushTimer);
     flushTimer = null;
+    flushedSinceClose = true;
     if (!finals.length) return;
     const utterance = finals.join(" ");
     finals = [];
@@ -109,6 +111,7 @@ const DeepgramService = (() => {
       // set a local deadline in case the response goes missing.
       if (gateOpen && !active) {
         gateOpen = false;
+        flushedSinceClose = false;
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: "Finalize" }));
         }
@@ -116,6 +119,7 @@ const DeepgramService = (() => {
         flushTimer = setTimeout(flushFinals, 1200);
       } else if (!gateOpen && active) {
         gateOpen = true;
+        flushedSinceClose = false;
       }
 
       if (active && ws && ws.readyState === WebSocket.OPEN) {
@@ -179,6 +183,16 @@ const DeepgramService = (() => {
     if (data.type !== "Results") return;
     const alt = data.channel && data.channel.alternatives && data.channel.alternatives[0];
     const text = ((alt && alt.transcript) || "").trim();
+
+    // The gate is closed and this closure's speech has already been posted
+    // (via Finalize response, UtteranceEnd, or the local deadline). Anything
+    // still trickling in is a duplicate of what we posted or transcribed
+    // breath/noise from the hangover — the source of stray "thanks"/"l"
+    // artifacts. Real speech reopens the gate and is unaffected.
+    if (!gateOpen && flushedSinceClose) {
+      if (text) console.log("Deepgram: discarding post-flush stray:", text);
+      return;
+    }
 
     if (data.is_final) {
       if (text) finals.push(text);

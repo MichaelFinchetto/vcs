@@ -12,7 +12,7 @@
 "use strict";
 
 // ---------- Constants ----------
-const APP_VERSION = "0.22.2"; // bump on every change so stale caches are obvious
+const APP_VERSION = "0.23.0"; // bump on every change so stale caches are obvious
 const ID_PREFIX = "mashaaaaa-7f3a-"; // namespace our room IDs on the public broker
 const MAX_PEERS = 2; // besides self => 3 participants total
 const SESSION_KEY = "masha-session"; // sessionStorage: survive refreshes, per-tab
